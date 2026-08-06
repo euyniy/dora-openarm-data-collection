@@ -16,8 +16,12 @@ location: Lab
 operator: Tester
 
 tasks:
+  # `prompt` / `description` はデータセットに記録される英語の指示。
+  # `prompt_ja` / `description_ja` は作業者向けの表示専用（記録には影響しない）。
   - prompt: Pick a spoon.
     description: Pick a spoon on a table.
+    prompt_ja: スプーンを取ってください。
+    description_ja: テーブルの上のスプーンを取ってください。
 
 equipment:
   id: Test

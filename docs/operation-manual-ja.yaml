@@ -1,0 +1,70 @@
+# Copyright 2026 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# タスク画面に表示する操作マニュアル。
+# dataflow の ui ノードの MANUAL_FILE で指定する。
+#
+# 書式:
+#   title:  パネルの見出し
+#   sections[].title: 見出し
+#   sections[].steps: 手順（番号付きで表示）
+#   sections[].bullets: 箇条書き（番号なしで表示）
+#   sections[].note:  注意書き（黄色の枠で表示）
+#
+# ここに書いてある同期手順はコード (dora-openarm の --align-trigger gripper)
+# の挙動に合わせた暫定版です。オペレーションチームの手順書の内容に
+# 置き換えてください。
+
+title: 操作マニュアル
+
+sections:
+  - title: 収録を始めるまで
+    steps:
+      - デスクトップの「KER データ収集」をダブルクリックする。
+      - 起動画面が「実行中」になり、この画面に切り替わるまで待つ。
+      - アームの表示が「左：停止中 / 右：停止中」なら「アーム起動」を押す。
+      - 下の「アームの同期手順」でアームを同期する（両方「同期済み」になる）。
+      - 画面のタスク内容を確認し、「スタート」を押して作業を始める。
+    note: >-
+      赤い枠でエラーが表示されたときは、収録を続けずに内容を確認してください。
+      解消しない場合は表示されている文言をそのまま担当者に伝えてください。
+
+  - title: アームの同期手順
+    steps:
+      - 「アーム起動」を押す。表示が「起動済み（未同期）」になる。
+      - KER リーダーを持ち、OpenArm 本体の現在の姿勢に近い形に合わせる。
+      - リーダーのグリッパー（トリガー）を握る。握っている間だけ同期が進む。
+      - アームがリーダーの姿勢に向けてゆっくり動く。手を離さずそのまま保持する。
+      - 表示が「同期済み」に変わったら同期完了。以後はリーダーの動きに追従する。
+    note: >-
+      同期中はアームがゆっくり動きます。周囲に人や物がないことを確認してください。
+      危険を感じたら「アーム停止」を押してください。
+
+  - title: 収録中の操作
+    bullets:
+      - 「成功で終了」… 作業がうまくいったとき。エピソードを保存して次のタスクへ進む。
+      - 「失敗で終了」… 失敗したとき。失敗として保存して次のタスクへ進む。
+      - 「取り消し」… 記録を残さずにこのエピソードをやめる。
+      - 「このタスクを飛ばす」… 別のタスクを実施したいとき。
+      - 「終了」… 本日の収録を終えるとき。データ収集プログラムが停止する。
+
+  - title: 困ったとき
+    bullets:
+      - カメラの Hz が「-- Hz」… USB ケーブルを挿し直し、「終了」してから起動し直す。
+      - アームが動かない … アームが「同期済み」か確認する。「停止中」なら「アーム起動」から。
+      - 画面が赤くなった … 表示されているエラー内容を担当者に伝える。
+      - 画面が真っ白・反応しない … デスクトップのショートカットからもう一度起動する。
+    note: >-
+      PC を再起動した後や USB を挿し直した後は CAN の設定が必要ですが、
+      ショートカットから起動すれば自動で実行されます。ターミナルの操作は不要です。

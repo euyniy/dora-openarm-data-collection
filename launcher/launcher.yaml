@@ -1,0 +1,61 @@
+# Copyright 2026 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# データ収集ランチャーの設定。
+#
+# `entries` に登録した 1 件につき 1 つのデスクトップショートカットが作られます
+# (launcher/install.sh を実行)。メタデータ違いの収集を複数運用する場合は、
+# 同じ dataflow に別の metadata を指定した entry を追加してください。
+
+# ランチャー自身が待ち受けるポート。
+port: 8080
+
+# タスク画面 (dora-openarm-data-collection-ui) の URL。
+# dataflow の ui ノードの PORT と合わせること。
+ui_url: "http://127.0.0.1:8000/"
+
+# dora コマンドを実行する Python 仮想環境。
+# 省略 (null) すると PATH 上の dora、次に <リポジトリ>/.venv/bin/dora を探す。
+# 例: venv: "/home/openarm/.venv"
+venv: null
+
+# dataflow / metadata を探すディレクトリ。
+# 省略すると launcher.yaml の 1 つ上（リポジトリ直下）を使う。
+repo_dir: null
+
+# CAN インタフェースの設定コマンド。
+# 再起動後や USB を挿し直した後に必要になる。sudo を無人で通すため、
+# launcher/install.sh が /etc/sudoers.d/openarm-can を導入する。
+can_setup:
+  command: ["sudo", "-n", "/usr/bin/openarm-can-configure-socketcan-4-arms", "-fd"]
+  # 設定対象のインタフェース。存在チェックと「設定済みか」の判定に使う。
+  interfaces: ["can0", "can1", "can2", "can3"]
+
+entries:
+  - id: ker
+    name: "KER データ収集"
+    description: "KER リーダーで OpenArm を操作してデータを収集します"
+    dataflow: "dataflow-ker.yaml"
+    metadata: "metadata.yaml"
+    can_setup: true
+    build: true
+
+  # メタデータ違いの例。使う場合はコメントを外して metadata ファイルを用意する。
+  # - id: ker-task-b
+  #   name: "KER データ収集 (タスクB)"
+  #   description: "タスクBのメタデータで収集します"
+  #   dataflow: "dataflow-ker.yaml"
+  #   metadata: "metadata_task_b.yaml"
+  #   can_setup: true
+  #   build: true

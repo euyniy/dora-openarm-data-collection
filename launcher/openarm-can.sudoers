@@ -1,0 +1,9 @@
+# OpenArm データ収集ランチャー用の sudo 設定。
+# launcher/install.sh が @TARGET_USER@ を置換して
+# /etc/sudoers.d/openarm-can に導入します。
+#
+# PC の再起動後や USB-CAN アダプタを挿し直した後は
+# CAN インタフェースの再設定が必要になります。作業者が
+# ターミナルでパスワードを入力せずに済むよう、この 1 コマンドだけを
+# パスワードなしで許可します（引数も -fd に限定）。
+@TARGET_USER@ ALL=(root) NOPASSWD: /usr/bin/openarm-can-configure-socketcan-4-arms -fd
