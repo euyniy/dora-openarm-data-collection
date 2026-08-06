@@ -578,6 +578,26 @@ class Runner:
         self._set(state="running", step="実行中")
         self._monitor()
 
+    def force_stop_all(self):
+        """Stop everything and leave a state the operator can act on.
+
+        Pressing this in an error state must clear that state: otherwise the
+        page keeps rendering the same red screen and looks broken.
+        """
+        self.stop()
+        count = self.cleanup_stale("手動")
+        with self.lock:
+            self.state = "stopped"
+            self.step = (
+                f"すべて停止しました（{count} 件のプロセスを終了）"
+                if count
+                else "すべて停止しました"
+            )
+            self.errors = []
+            self._seen_errors.clear()
+            self.hint = None
+        return count
+
     def cleanup_stale(self, reason):
         """Kill dora processes left over from an earlier run. Returns the count."""
         exclude = ()
@@ -906,7 +926,7 @@ function errorHtml(s) {
         </form>
         <a class="button secondary" href="/log" target="_blank">詳しいログを見る</a>
         ${cleanupButton()}
-        <a class="button secondary" href="/">メニューに戻る</a>
+        <a class="button secondary" href="/menu">メニューに戻る</a>
       </div>
       ${logHtml(s)}
     </div>`;
@@ -923,7 +943,7 @@ function stoppedHtml(s) {
           <button type="submit">再開</button>
         </form>
         ${cleanupButton()}
-        <a class="button secondary" href="/">メニューに戻る</a>
+        <a class="button secondary" href="/menu">メニューに戻る</a>
       </div>
       ${logHtml(s)}
     </div>`;
@@ -1045,8 +1065,7 @@ class Handler(BaseHTTPRequestHandler):
             self._redirect("/")
         elif path == "/cleanup":
             # "Kill everything": the operator's way out of a stuck state.
-            self.runner.stop()
-            self.runner.cleanup_stale("手動")
+            self.runner.force_stop_all()
             self._redirect("/")
         else:
             self._send(404, "text/plain; charset=utf-8", "not found")
@@ -1121,10 +1140,10 @@ def kill_everything(config, port):
         except OSError:
             pass
     killed = len(kill_pids(stale_dataflow_pids(config.repo_dir)))
-    # A launcher that did not answer is wedged: it would keep the port and make
-    # the shortcut look dead, so take it down too.
-    if not answered:
-        killed += len(kill_pids(other_launcher_pids()))
+    # The launcher goes down too, whether it answered or is wedged: "stop
+    # everything" must leave nothing holding the port, and the shortcut starts
+    # a fresh one (with the current code) on the next double-click.
+    killed += len(kill_pids(other_launcher_pids()))
     return answered, killed
 
 

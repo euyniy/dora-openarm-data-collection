@@ -62,6 +62,15 @@ entries:
     can_setup: true
     build: true
 
+  # メタデータ違いの例。dataflow は同じで metadata だけ差し替える。
+  - id: ker-tableware
+    name: "KER データ収集（食器タスク）"
+    description: "箸・スプーンの箱入れ／箱空けを収集します"
+    dataflow: "dataflow-ker.yaml"
+    metadata: "metadata_tableware.yaml"
+    can_setup: true
+    build: true
+
   # 動作確認用。実機 (CAN / KER / カメラ) がなくても起動できるダミー構成。
   - id: dummy
     name: "ダミー収集（動作確認用）"
@@ -70,12 +79,3 @@ entries:
     metadata: "metadata.yaml"
     can_setup: false
     build: true
-
-  # メタデータ違いの例。使う場合はコメントを外して metadata ファイルを用意する。
-  # - id: ker-task-b
-  #   name: "KER データ収集 (タスクB)"
-  #   description: "タスクBのメタデータで収集します"
-  #   dataflow: "dataflow-ker.yaml"
-  #   metadata: "metadata_task_b.yaml"
-  #   can_setup: true
-  #   build: true

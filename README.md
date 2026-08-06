@@ -8,7 +8,14 @@ This repository provides data collection configurations for [OpenArm](https://op
 
 Each task in `metadata.yaml` may carry `prompt_ja` / `description_ja`. They are
 shown to the operator instead of `prompt` / `description`, which stay in English
-because they are recorded as the dataset's language instruction.
+because they are recorded as the dataset's language instruction. `description`
+states the initial state the task expects, so the operator can set the table up
+before pressing start.
+
+[`metadata_tableware.yaml`](metadata_tableware.yaml) is a second (provisional)
+task set. Which metadata a session uses is chosen from the desktop launcher: one
+entry in [`launcher/launcher.yaml`](launcher/launcher.yaml) per metadata file,
+one shortcut per entry.
 
 ### Desktop launcher
 
