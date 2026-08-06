@@ -47,12 +47,42 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
+
+
+def show_desktop_error(message):
+    """Report a failure that happens before the web page exists.
+
+    A desktop shortcut has no terminal, so a bare traceback would look like
+    "nothing happened" to the operator. Show a dialog and keep a crash log.
+    """
+    sys.stderr.write(message + "\n")
+    try:
+        base = os.getenv("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+        path = pathlib.Path(base) / "openarm-launcher"
+        path.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.datetime.now().isoformat(timespec="seconds")
+        with (path / "launcher-crash.log").open("a", encoding="utf-8") as log:
+            log.write(f"[{stamp}] {message}\n")
+    except OSError:
+        pass
+    title = "OpenArm データ収集"
+    for argv in (
+        ["zenity", "--error", "--width=520", "--title", title, "--text", message],
+        ["kdialog", "--title", title, "--error", message],
+        ["notify-send", title, message],
+    ):
+        if shutil.which(argv[0]):
+            subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+    return False
+
+
 try:
     import yaml
 except ModuleNotFoundError:  # pragma: no cover - configuration error
-    sys.stderr.write(
+    show_desktop_error(
         "PyYAML が見つかりません。`sudo apt install python3-yaml` "
-        "または `pip install pyyaml` を実行してください。\n"
+        "または `pip install pyyaml` を実行してください。"
     )
     raise
 
@@ -851,6 +881,30 @@ def port_in_use(port):
         return False
 
 
+def retry_running_instance(url, entry_id):
+    """Ask an already-running launcher to start `entry_id` when it is idle."""
+    if not entry_id:
+        return False
+    try:
+        with urllib.request.urlopen(url.rstrip("/") + "/status", timeout=2) as response:
+            state = json.loads(response.read().decode("utf-8")).get("state")
+    except (OSError, ValueError):
+        return False
+    if state not in ("idle", "stopped", "error"):
+        return False
+    try:
+        request = urllib.request.Request(
+            url.rstrip("/") + "/start",
+            data=f"entry={entry_id}".encode(),
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        urllib.request.urlopen(request, timeout=5).read()
+    except OSError:
+        return False
+    return True
+
+
 def main():
     """Run the launcher web server and, optionally, start an entry at once."""
     parser = argparse.ArgumentParser(description="OpenArm データ収集ランチャー")
@@ -868,10 +922,18 @@ def main():
     url = f"http://127.0.0.1:{port}/"
 
     if port_in_use(port):
-        # Already running: just bring its window forward.
+        # Already running: bring its page up. A second click is also how the
+        # operator retries, so restart the entry unless it is busy.
+        entry_id = args.entry or (
+            config.entries[0]["id"] if len(config.entries) == 1 else None
+        )
+        retried = retry_running_instance(url, entry_id)
         if not args.no_browser:
             open_browser(url)
-        print(f"ランチャーはすでに起動しています: {url}")
+        print(
+            f"ランチャーはすでに起動しています: {url}"
+            + ("（再試行しました）" if retried else "")
+        )
         return 0
 
     runner = Runner(config)
@@ -908,4 +970,14 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except SystemExit:
+        raise
+    except BaseException as error:  # noqa: BLE001 - last resort for a shortcut
+        show_desktop_error(
+            "データ収集を起動できませんでした。\n\n"
+            f"{type(error).__name__}: {error}\n\n"
+            "担当者に連絡してください。"
+        )
+        raise

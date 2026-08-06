@@ -19,6 +19,10 @@ nodes:
     path: dora-openarm-data-collection-ui
     env:
       METADATA_FILE: "metadata.yaml"
+      # 作業者向けの操作マニュアル（タスク画面に表示）
+      MANUAL_FILE: "docs/operation-manual-ja.yaml"
+      # 異常終了したときに戻る起動画面（launcher/openarm_launcher.py）
+      LAUNCHER_URL: "http://127.0.0.1:8080/"
     inputs:
       # We need at least one input to keep this node alive.
       tick: dora/timer/secs/1

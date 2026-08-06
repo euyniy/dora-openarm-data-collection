@@ -123,6 +123,14 @@ echo
 echo "== CAN 設定のパスワードなし sudo を設定します =="
 echo "  対象ユーザー: ${TARGET_USER}"
 
+# entry を足して再実行するだけのときに、パスワードを聞かれないようにする。
+if sudo -n -l /usr/bin/openarm-can-configure-socketcan-4-arms -fd >/dev/null 2>&1; then
+  echo "  設定済みです（変更しません）"
+  echo
+  echo "完了しました。デスクトップのアイコンをダブルクリックして起動できます。"
+  exit 0
+fi
+
 tmp_sudoers="$(mktemp)"
 trap 'rm -f "${tmp_sudoers}"' EXIT
 sed "s/@TARGET_USER@/${TARGET_USER}/" "${LAUNCHER_DIR}/openarm-can.sudoers" \
