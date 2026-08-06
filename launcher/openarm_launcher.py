@@ -19,7 +19,7 @@ The operator only clicks a desktop shortcut. This process:
 
 1. serves a Japanese status page (default http://127.0.0.1:8080/),
 2. configures the CAN interfaces (needs a passwordless sudo rule),
-3. runs `dora build` when needed and then `dora run <dataflow>`,
+3. runs `uv run dora build ... --uv` when needed, then `uv run dora run ... --uv`,
 4. redirects the browser to the task screen once the UI node is up,
 5. shows any failure as red text on that page instead of in a terminal,
    and forwards error lines to the task screen while the dataflow runs.
@@ -107,6 +107,7 @@ class Config:
         self.port = int(raw.get("port", 8080))
         self.ui_url = raw.get("ui_url", "http://127.0.0.1:8000/")
         self.venv = raw.get("venv")
+        self.uv = raw.get("uv")
         self.can_setup = raw.get("can_setup") or {}
         self.entries = raw.get("entries") or []
         if not self.entries:
@@ -125,19 +126,24 @@ class Config:
         parsed = urlparse(self.ui_url)
         return parsed.hostname or "127.0.0.1", parsed.port or 80
 
-    def dora_command(self):
-        """Return the dora executable to use."""
-        if self.venv:
-            candidate = pathlib.Path(self.venv).expanduser() / "bin" / "dora"
+    def uv_command(self):
+        """Return the uv executable to use."""
+        for candidate in self._uv_candidates():
             if candidate.exists():
                 return str(candidate)
-        found = shutil.which("dora")
-        if found:
-            return found
-        candidate = self.repo_dir / ".venv" / "bin" / "dora"
-        if candidate.exists():
-            return str(candidate)
-        return None
+        return shutil.which("uv")
+
+    def _uv_candidates(self):
+        if self.uv:
+            yield pathlib.Path(self.uv).expanduser()
+        if self.venv:
+            yield pathlib.Path(self.venv).expanduser() / "bin" / "uv"
+        yield self.repo_dir / ".venv" / "bin" / "uv"
+        yield pathlib.Path.home() / ".local" / "bin" / "uv"
+
+    def dora_argv(self, uv, *args):
+        """Return the argv that runs dora through uv, e.g. `uv run dora run x --uv`."""
+        return [uv, "run", "dora", *args, "--uv"]
 
 
 class Runner:
@@ -327,14 +333,14 @@ class Runner:
         current = f"{dataflow_path.stat().st_mtime_ns}"
         return stamp, current
 
-    def _build(self, entry, dataflow_path, dora):
+    def _build(self, entry, dataflow_path, uv):
         if not entry.get("build", True):
             return True
         stamp, current = self._build_stamp(entry, dataflow_path)
         if stamp.exists() and stamp.read_text(encoding="utf-8").strip() == current:
             return True
         self._set(step="ノードを準備しています…（初回は数分かかります）")
-        code = self._run_step([dora, "build", str(dataflow_path)])
+        code = self._run_step(self.config.dora_argv(uv, "build", str(dataflow_path)))
         if code != 0:
             self._fail(
                 f"ノードの準備 (dora build) に失敗しました (終了コード {code})",
@@ -410,11 +416,11 @@ class Runner:
         return True, "起動しました"
 
     def _run(self, entry):
-        dora = self.config.dora_command()
-        if dora is None:
+        uv = self.config.uv_command()
+        if uv is None:
             self._fail(
-                "dora コマンドが見つかりません",
-                hint="launcher/launcher.yaml の venv に dora のある仮想環境を指定してください。",
+                "uv コマンドが見つかりません",
+                hint="launcher/launcher.yaml の uv に uv の絶対パスを指定してください。",
             )
             return
         if entry.get("can_setup", True) and not self._setup_can():
@@ -422,7 +428,7 @@ class Runner:
         dataflow_path = self._prepare_dataflow(entry)
         if dataflow_path is None:
             return
-        if not self._build(entry, dataflow_path, dora):
+        if not self._build(entry, dataflow_path, uv):
             return
 
         self._set(step="データフローを起動しています…")
@@ -430,7 +436,7 @@ class Runner:
         env.setdefault("PYTHONUNBUFFERED", "1")
         try:
             self.proc = subprocess.Popen(
-                [dora, "run", str(dataflow_path)],
+                self.config.dora_argv(uv, "run", str(dataflow_path)),
                 cwd=str(self.config.repo_dir),
                 env=env,
                 stdout=subprocess.PIPE,

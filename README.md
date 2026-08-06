@@ -14,7 +14,8 @@ because they are recorded as the dataset's language instruction.
 
 [`launcher/`](launcher/README.md) starts a configuration from a desktop
 shortcut, so operators do not need a terminal: it configures the CAN interfaces
-(needs `sudo`), runs `dora build` / `dora run`, opens the task screen, and shows
+(needs `sudo`), runs `uv run dora build` / `uv run dora run` (with `--uv`),
+opens the task screen, and shows
 failures on screen in Japanese instead of on a terminal.
 
 ```console

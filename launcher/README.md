@@ -4,8 +4,8 @@
 デスクトップのショートカットをダブルクリックするだけで、
 
 1. CAN インタフェースの設定（`sudo openarm-can-configure-socketcan-4-arms -fd`）
-2. 必要なら `dora build`
-3. `dora run <dataflow>`
+2. 必要なら `uv run dora build <dataflow> --uv`
+3. `uv run dora run <dataflow> --uv`
 4. タスク画面（`dora-openarm-data-collection-ui`）へ自動で切り替え
 
 までが実行されます。途中で失敗した場合は、ターミナルではなく画面に赤字で
@@ -35,9 +35,11 @@ $ ./launcher/install.sh
   済むようにするため。許可するのは
   `/usr/bin/openarm-can-configure-socketcan-4-arms -fd` の 1 つだけ）
 
-`dora` が仮想環境にある場合は `launcher.yaml` の `venv` にそのパスを
-書いてください（例: `venv: /home/openarm/.venv`）。省略すると `PATH` 上の
-`dora`、次にリポジトリ直下の `.venv/bin/dora` を探します。
+`dora` は `uv run dora ... --uv` で実行します。`uv` が見つからない場合は
+`launcher.yaml` の `uv` に実行ファイルのパスを書いてください
+（例: `uv: /home/openarm/.local/bin/uv`）。省略した場合は
+`<venv>/bin/uv` → リポジトリ直下の `.venv/bin/uv` → `~/.local/bin/uv` →
+`PATH` 上の `uv` の順に探します。
 
 ### メタデータが複数ある場合
 
