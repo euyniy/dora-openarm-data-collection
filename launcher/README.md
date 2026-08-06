@@ -18,6 +18,7 @@
 | `launcher.yaml` | 起動する dataflow / metadata の組（entry）の定義 |
 | `openarm_launcher.py` | ランチャー本体（標準ライブラリ + PyYAML のみ） |
 | `install.sh` | ショートカット作成と sudo 設定（管理者が一度だけ実行） |
+| （生成）`データ収集を強制停止` | `--kill` を呼ぶショートカット |
 | `openarm-can.sudoers` | `/etc/sudoers.d/openarm-can` の雛形 |
 
 ## 管理者向け: 初期セットアップ
@@ -78,6 +79,11 @@ dataflow 側の `METADATA_FILE` と entry の `metadata` が違うときは、
 ターミナルの操作は不要です。PC の再起動後や USB を挿し直した後の CAN 設定も
 ランチャーが自動で行います。
 
+止まらなくなったとき（画面が固まる、起動し直しても始まらない）は、
+デスクトップの「データ収集を強制停止」をダブルクリックしてください。
+収集に関するプロセスをすべて止めてから、結果をダイアログで知らせます。
+起動画面の「すべて強制停止」ボタンでも同じことができます。
+
 ショートカットをもう一度ダブルクリックすると:
 
 - 収集中: 画面を開くだけ（実行中の収集はそのまま）
@@ -101,6 +107,7 @@ $ python3 launcher/openarm_launcher.py --entry ker
 | `--config <path>` | `launcher.yaml` のパス |
 | `--port <port>` | 待ち受けポート（既定は `launcher.yaml` の `port`） |
 | `--no-browser` | ブラウザを自動で開かない |
+| `--kill` | 収集に関するプロセスをすべて停止して終了する |
 
 エンドポイント:
 
@@ -111,9 +118,16 @@ $ python3 launcher/openarm_launcher.py --entry ker
 | `GET /log` | `dora` の出力ログ全文（`~/.local/state/openarm-launcher/logs/`） |
 | `POST /start` | entry の起動（フォーム `entry=<id>`） |
 | `POST /stop` | 実行中の dataflow の停止 |
+| `POST /cleanup` | 停止 + 残っているプロセスの強制終了 |
 
 実行中に `dora` の出力からエラー行を検出すると、タスク画面の
 `POST /api/error` に転送して画面上に赤字で表示します。
+
+起動時（`cleanup_before_start: true`）と `--kill` / `POST /cleanup` では、
+このリポジトリを作業ディレクトリにしている dora のプロセス
+（`dora`、`dora-*`、`opencv-video-capture`）だけを選んで停止します。
+プログラム名で判定しているので、パスに `dora-openarm` を含むだけの
+シェルやランチャー自身は対象になりません。
 
 停止時は `dora run` のプロセスグループに SIGINT → SIGTERM → SIGKILL を送り、
 さらに同じセッションに残ったノードプロセスも終了させます（残ると次回起動時に

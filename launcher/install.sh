@@ -115,6 +115,29 @@ EOF
   echo "  作成: メニュー"
 fi
 
+# 固まったときに作業者が自分で全部止められる入口。
+stop_file="${APPLICATIONS_DIR}/openarm-data-collection-stop.desktop"
+cat > "${stop_file}" <<EOF
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=データ収集を強制停止
+Comment=収集に関するプロセスをすべて停止します
+Exec=${PYTHON} ${LAUNCHER_DIR}/openarm_launcher.py --kill
+Icon=process-stop
+Terminal=false
+Categories=Science;Utility;
+StartupNotify=true
+EOF
+chmod +x "${stop_file}"
+cp -f "${stop_file}" "${DESKTOP_DIR}/"
+chmod +x "${DESKTOP_DIR}/$(basename "${stop_file}")"
+if command -v gio >/dev/null 2>&1; then
+  gio set "${DESKTOP_DIR}/$(basename "${stop_file}")" \
+    metadata::trusted true 2>/dev/null || true
+fi
+echo "  作成: データ収集を強制停止"
+
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "${APPLICATIONS_DIR}" 2>/dev/null || true
 fi

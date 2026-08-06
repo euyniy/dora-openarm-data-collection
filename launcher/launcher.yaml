@@ -41,6 +41,10 @@ venv: null
 # 省略すると launcher.yaml の 1 つ上（リポジトリ直下）を使う。
 repo_dir: null
 
+# 起動前に、前回の収集で残った dora のプロセスを停止する。
+# （このリポジトリを作業ディレクトリにしている dora / ノードのみが対象）
+cleanup_before_start: true
+
 # CAN インタフェースの設定コマンド。
 # 再起動後や USB を挿し直した後に必要になる。sudo を無人で通すため、
 # launcher/install.sh が /etc/sudoers.d/openarm-can を導入する。

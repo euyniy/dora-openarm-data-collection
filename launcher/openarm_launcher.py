@@ -49,6 +49,22 @@ from urllib.parse import urlparse, parse_qs
 
 
 
+def show_desktop_message(message, kind="info"):
+    """Show a dialog for a shortcut that has no terminal to print to."""
+    sys.stdout.write(message + "\n")
+    title = "OpenArm データ収集"
+    for argv in (
+        ["zenity", f"--{kind}", "--width=520", "--title", title, "--text", message],
+        ["kdialog", "--title", title, f"--{'sorry' if kind == 'error' else 'msgbox'}",
+         message],
+        ["notify-send", title, message],
+    ):
+        if shutil.which(argv[0]):
+            subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+    return False
+
+
 def show_desktop_error(message):
     """Report a failure that happens before the web page exists.
 
@@ -65,16 +81,7 @@ def show_desktop_error(message):
             log.write(f"[{stamp}] {message}\n")
     except OSError:
         pass
-    title = "OpenArm データ収集"
-    for argv in (
-        ["zenity", "--error", "--width=520", "--title", title, "--text", message],
-        ["kdialog", "--title", title, "--error", message],
-        ["notify-send", title, message],
-    ):
-        if shutil.which(argv[0]):
-            subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return True
-    return False
+    return show_desktop_message(message, kind="error")
 
 
 try:
@@ -110,6 +117,79 @@ ERROR_IGNORE_PATTERNS = (
 )
 
 
+def _read_cmdline(pid):
+    try:
+        raw = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return []
+    return [part for part in raw.decode("utf-8", "replace").split("\0") if part]
+
+
+def dataflow_process_name(argv):
+    """Return the dora program name a command line runs, or None.
+
+    Matching is on program names, never on the whole command line: the
+    repository path itself contains "dora-openarm", so a substring match would
+    also hit the launcher and any shell sitting in the directory.
+    """
+    if not argv:
+        return None
+    names = [pathlib.PurePath(argv[0]).name]
+    if names[0] in ("uv", "uvx") and len(argv) > 2 and argv[1] == "run":
+        names.append(pathlib.PurePath(argv[2]).name)
+    elif names[0].startswith("python") and len(argv) > 1:
+        names.append(pathlib.PurePath(argv[1]).name)
+    for name in names:
+        if name == "dora" or name.startswith(("dora-", "opencv-video-capture")):
+            return name
+    return None
+
+
+def stale_dataflow_pids(repo_dir, exclude=()):
+    """Return pids of dora processes that were started for this repository."""
+    repo = str(pathlib.Path(repo_dir).resolve())
+    found = []
+    for entry in pathlib.Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        pid = int(entry.name)
+        if pid == os.getpid() or pid in exclude:
+            continue
+        name = dataflow_process_name(_read_cmdline(pid))
+        if not name:
+            continue
+        try:
+            cwd = os.readlink(f"/proc/{pid}/cwd")
+        except OSError:
+            continue  # another user's process, or it just exited
+        if cwd == repo or cwd.startswith(repo + os.sep):
+            found.append(pid)
+    return found
+
+
+def kill_pids(pids, timeout_s=5.0):
+    """SIGTERM then SIGKILL the given pids. Returns the pids that were signalled."""
+    signalled = []
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            signalled.append(pid)
+        except OSError:
+            pass
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        alive = [pid for pid in signalled if pathlib.Path(f"/proc/{pid}").exists()]
+        if not alive:
+            return signalled
+        time.sleep(0.2)
+    for pid in signalled:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    return signalled
+
+
 def _now():
     return datetime.datetime.now().strftime("%H:%M:%S")
 
@@ -138,6 +218,7 @@ class Config:
         self.ui_url = raw.get("ui_url", "http://127.0.0.1:8000/")
         self.venv = raw.get("venv")
         self.uv = raw.get("uv")
+        self.cleanup_before_start = bool(raw.get("cleanup_before_start", True))
         self.can_setup = raw.get("can_setup") or {}
         self.entries = raw.get("entries") or []
         if not self.entries:
@@ -459,6 +540,9 @@ class Runner:
                 hint="launcher/launcher.yaml の uv に uv の絶対パスを指定してください。",
             )
             return
+        if self.config.cleanup_before_start:
+            self._set(step="前回のプロセスを片付けています…")
+            self.cleanup_stale("起動前")
         if entry.get("can_setup", True) and not self._setup_can():
             return
         dataflow_path = self._prepare_dataflow(entry)
@@ -493,6 +577,18 @@ class Runner:
             return
         self._set(state="running", step="実行中")
         self._monitor()
+
+    def cleanup_stale(self, reason):
+        """Kill dora processes left over from an earlier run. Returns the count."""
+        exclude = ()
+        if self.proc is not None and self.proc.poll() is None:
+            exclude = (self.proc.pid,)
+        pids = stale_dataflow_pids(self.config.repo_dir, exclude=exclude)
+        if not pids:
+            return 0
+        self._write(f"# 残っているプロセスを停止します（{reason}）: {pids}")
+        kill_pids(pids)
+        return len(pids)
 
     def _wait_for_free_ui_port(self):
         """Make sure no leftover task screen owns the UI port before starting.
@@ -737,6 +833,10 @@ def menu_page(config):
     <div class="card">
       <div class="sub">実施する収集を選んでください。</div>
       <div class="entry-list">{"".join(rows)}</div>
+      <form method="post" action="/cleanup"
+            onsubmit="return confirm('収集に関するプロセスをすべて強制停止します。よろしいですか？')">
+        <button type="submit" class="secondary">すべて強制停止</button>
+      </form>
     </div>
 """
     return _page("OpenArm データ収集 — 起動メニュー", body)
@@ -805,6 +905,7 @@ function errorHtml(s) {
           <button type="submit">再試行</button>
         </form>
         <a class="button secondary" href="/log" target="_blank">詳しいログを見る</a>
+        ${cleanupButton()}
         <a class="button secondary" href="/">メニューに戻る</a>
       </div>
       ${logHtml(s)}
@@ -821,10 +922,19 @@ function stoppedHtml(s) {
           <input type="hidden" name="entry" value="${esc(s.entry ? s.entry.id : "")}">
           <button type="submit">再開</button>
         </form>
+        ${cleanupButton()}
         <a class="button secondary" href="/">メニューに戻る</a>
       </div>
       ${logHtml(s)}
     </div>`;
+}
+
+function cleanupButton() {
+  return `
+    <form method="post" action="/cleanup"
+          onsubmit="return confirm('収集に関するプロセスをすべて強制停止します。よろしいですか？')">
+      <button type="submit" class="secondary">すべて強制停止</button>
+    </form>`;
 }
 
 function logHtml(s) {
@@ -933,6 +1043,11 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/stop":
             self.runner.stop()
             self._redirect("/")
+        elif path == "/cleanup":
+            # "Kill everything": the operator's way out of a stuck state.
+            self.runner.stop()
+            self.runner.cleanup_stale("手動")
+            self._redirect("/")
         else:
             self._send(404, "text/plain; charset=utf-8", "not found")
 
@@ -981,6 +1096,38 @@ def retry_running_instance(url, entry_id):
     return True
 
 
+def other_launcher_pids():
+    """Return the pids of other running launcher processes."""
+    me = pathlib.Path(__file__).name
+    pids = []
+    for entry in pathlib.Path("/proc").iterdir():
+        if not entry.name.isdigit() or int(entry.name) == os.getpid():
+            continue
+        argv = _read_cmdline(int(entry.name))
+        if any(pathlib.PurePath(arg).name == me for arg in argv[:3]):
+            pids.append(int(entry.name))
+    return pids
+
+
+def kill_everything(config, port):
+    """Stop the dataflow and every process left behind (the `--kill` entry)."""
+    url = f"http://127.0.0.1:{port}/"
+    answered = False
+    if port_in_use(port):
+        try:
+            request = urllib.request.Request(url + "stop", data=b"", method="POST")
+            urllib.request.urlopen(request, timeout=30).read()
+            answered = True
+        except OSError:
+            pass
+    killed = len(kill_pids(stale_dataflow_pids(config.repo_dir)))
+    # A launcher that did not answer is wedged: it would keep the port and make
+    # the shortcut look dead, so take it down too.
+    if not answered:
+        killed += len(kill_pids(other_launcher_pids()))
+    return answered, killed
+
+
 def main():
     """Run the launcher web server and, optionally, start an entry at once."""
     parser = argparse.ArgumentParser(description="OpenArm データ収集ランチャー")
@@ -991,11 +1138,32 @@ def main():
     parser.add_argument(
         "--no-browser", action="store_true", help="ブラウザを自動で開かない"
     )
+    parser.add_argument(
+        "--kill",
+        action="store_true",
+        help="収集に関するプロセスをすべて停止して終了する",
+    )
     args = parser.parse_args()
 
     config = Config(args.config)
     port = args.port or config.port
     url = f"http://127.0.0.1:{port}/"
+
+    if args.kill:
+        answered, killed = kill_everything(config, port)
+        if answered:
+            detail = "実行中のデータ収集を停止しました。"
+            if killed:
+                detail += f"（残っていたプロセス {killed} 件も停止しました）"
+        elif killed:
+            detail = f"残っていたプロセスを停止しました（{killed} 件）。"
+        else:
+            detail = "停止するものはありませんでした。"
+        show_desktop_message(
+            detail + "\n\nもう一度始めるには、デスクトップのショートカットを"
+            "ダブルクリックしてください。"
+        )
+        return 0
 
     if port_in_use(port):
         # Already running: bring its page up. A second click is also how the
