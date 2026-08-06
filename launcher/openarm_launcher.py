@@ -467,6 +467,9 @@ class Runner:
         if not self._build(entry, dataflow_path, uv):
             return
 
+        if not self._wait_for_free_ui_port():
+            return
+
         self._set(step="データフローを起動しています…")
         env = dict(os.environ)
         env.setdefault("PYTHONUNBUFFERED", "1")
@@ -490,6 +493,26 @@ class Runner:
             return
         self._set(state="running", step="実行中")
         self._monitor()
+
+    def _wait_for_free_ui_port(self):
+        """Make sure no leftover task screen owns the UI port before starting.
+
+        A previous run that did not die completely would otherwise make
+        `_wait_for_ui` succeed at once and hand the operator a dead screen.
+        """
+        host, port = self.config.ui_host_port
+        for _ in range(20):  # a normal shutdown releases the port in a second
+            if not port_in_use(port):
+                return True
+            time.sleep(0.5)
+        self._fail(
+            f"前回の収集プロセスが残っています（ポート {port} が使用中）",
+            hint=(
+                "少し待ってから「再試行」を押してください。"
+                "改善しない場合は PC を再起動するか担当者に連絡してください。"
+            ),
+        )
+        return False
 
     def _pump_output(self):
         for line in self.proc.stdout:
@@ -531,12 +554,58 @@ class Runner:
                 hint="下のエラー内容を担当者に伝えてください。「再試行」で再起動できます。",
             )
 
+    def _session_pids(self, sid):
+        """Return the pids that belong to session `sid` (the dataflow's own)."""
+        pids = []
+        for entry in pathlib.Path("/proc").iterdir():
+            if not entry.name.isdigit():
+                continue
+            try:
+                stat = (entry / "stat").read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue  # the process is already gone
+            try:
+                # "... (comm) state ppid pgrp session ..."; comm may contain spaces.
+                fields = stat[stat.rindex(")") + 2 :].split()
+                if int(fields[3]) == sid:
+                    pids.append(int(entry.name))
+            except (ValueError, IndexError):
+                continue
+        return pids
+
+    def _kill_session_leftovers(self, sid):
+        """Kill nodes that escaped the process group by making their own.
+
+        `dora run` gets its own session, so everything it spawned is in that
+        session even when it is in another process group. Without this, node
+        processes survive a stop and pile up run after run.
+        """
+        if sid is None or sid == os.getsid(0):
+            return
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            pids = [pid for pid in self._session_pids(sid) if pid != os.getpid()]
+            if not pids:
+                return
+            for pid in pids:
+                try:
+                    os.kill(pid, sig)
+                except OSError:
+                    pass
+            for _ in range(20):
+                if not self._session_pids(sid):
+                    return
+                time.sleep(0.1)
+
     def stop(self):
         """Stop the running dataflow the way Ctrl-C would."""
         proc = self.proc
         # A failure already explained on screen must survive the cleanup.
         keep_error = self.state == "error"
+        # `dora run` is started with start_new_session=True, so its pid is the
+        # session id of every process it spawned (valid even after it exited).
+        sid = proc.pid if proc is not None else None
         if proc is None or proc.poll() is not None:
+            self._kill_session_leftovers(sid)
             if not keep_error:
                 self._set(state="stopped", step="終了しました")
             return
@@ -548,11 +617,18 @@ class Runner:
             if proc.poll() is not None:
                 break
             time.sleep(0.1)
-        if proc.poll() is None:
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            if proc.poll() is not None:
+                break
             try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                os.killpg(os.getpgid(proc.pid), sig)
             except OSError:
                 pass
+            for _ in range(30):
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.1)
+        self._kill_session_leftovers(sid)
         if not keep_error:
             self._set(state="stopped", step="終了しました")
 
@@ -941,7 +1017,10 @@ def main():
     server.runner = runner
     server.daemon_threads = True
 
+    stopping = threading.Event()
+
     def shutdown(signum, frame):
+        stopping.set()
         runner.stop()
         threading.Thread(target=server.shutdown, daemon=True).start()
 
@@ -962,8 +1041,10 @@ def main():
         open_browser(url)
 
     try:
-        while True:
-            time.sleep(0.5)
+        # SIGTERM (`pkill openarm_launcher.py`) must end the process, otherwise
+        # a stale instance keeps the port and the shortcut looks unresponsive.
+        while not stopping.wait(0.5):
+            pass
     except KeyboardInterrupt:
         runner.stop()
     return 0

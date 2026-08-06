@@ -62,6 +62,12 @@ dataflow 側の `METADATA_FILE` と entry の `metadata` が違うときは、
 `METADATA_FILE` を差し替えた `.launcher-<id>.yaml` を自動生成して実行します
 （このファイルは `.gitignore` 済み）。
 
+### 実機がない PC での動作確認
+
+`launcher.yaml` には動作確認用の `dummy` entry を入れてあります
+（`dataflow_dummy.yaml`、CAN 設定なし）。ショートカット
+「ダミー収集（動作確認用）」から、実機がなくても画面と操作を確認できます。
+
 ## 作業者向け: 使い方
 
 1. デスクトップのショートカット（例: 「KER データ収集」）をダブルクリック
@@ -71,6 +77,15 @@ dataflow 側の `METADATA_FILE` と entry の `metadata` が違うときは、
 
 ターミナルの操作は不要です。PC の再起動後や USB を挿し直した後の CAN 設定も
 ランチャーが自動で行います。
+
+ショートカットをもう一度ダブルクリックすると:
+
+- 収集中: 画面を開くだけ（実行中の収集はそのまま）
+- 停止中・エラー: もう一度起動し直す（「再試行」と同じ）
+
+起動そのものに失敗した場合（設定ファイルが壊れている等、画面を出す前の失敗）は
+デスクトップにエラーダイアログを表示し、`~/.local/state/openarm-launcher/launcher-crash.log`
+に記録します。
 
 ## 動作確認（開発者向け）
 
@@ -99,3 +114,8 @@ $ python3 launcher/openarm_launcher.py --entry ker
 
 実行中に `dora` の出力からエラー行を検出すると、タスク画面の
 `POST /api/error` に転送して画面上に赤字で表示します。
+
+停止時は `dora run` のプロセスグループに SIGINT → SIGTERM → SIGKILL を送り、
+さらに同じセッションに残ったノードプロセスも終了させます（残ると次回起動時に
+ポート 8000 を掴んだままになるため）。`pkill -f openarm_launcher.py` でも
+ランチャー本体は確実に終了します。
