@@ -342,10 +342,16 @@ class Runner:
         self._set(step="ノードを準備しています…（初回は数分かかります）")
         code = self._run_step(self.config.dora_argv(uv, "build", str(dataflow_path)))
         if code != 0:
-            self._fail(
-                f"ノードの準備 (dora build) に失敗しました (終了コード {code})",
-                hint="ネットワーク接続を確認して「再試行」を押してください。",
-            )
+            recent = list(self.log)[-400:]
+            if any("externally-managed-environment" in line for line in recent):
+                # dora fell back to the system pip: the run did not go through uv.
+                hint = (
+                    "システムの pip が使われています。ランチャーが古い可能性があるため、"
+                    "リポジトリを最新版に更新し、ランチャーを再起動してください。"
+                )
+            else:
+                hint = "ネットワーク接続を確認して「再試行」を押してください。"
+            self._fail(f"ノードの準備 (dora build) に失敗しました (終了コード {code})", hint)
             return False
         stamp.write_text(current, encoding="utf-8")
         return True
