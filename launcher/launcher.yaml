@@ -41,6 +41,18 @@ venv: null
 # 省略すると launcher.yaml の 1 つ上（リポジトリ直下）を使う。
 repo_dir: null
 
+# 収録データの保存先。 <root>/<日付>/<日時>/ に 1 セッション 1 フォルダで保存する。
+# 例: /hdd_data/2026-08-06/2026-08-06_09-12-30/episodes/0/...
+# 起動時にディレクトリを作成し、書き込めない場合（ディスク未マウント等）は
+# 収集を始めずに画面へエラーを出す。
+# entry ごとに `dataset_root:` を書くと上書きできる（ダミー収集など）。
+# 一時的に変えたいときは環境変数 DATASET_ROOT でも上書きできる
+# （優先順位: entry の dataset_root > DATASET_ROOT > ここの root）。
+dataset:
+  root: "/hdd_data"
+  date_format: "%Y-%m-%d"
+  session_format: "%Y-%m-%d_%H-%M-%S"
+
 # 起動前に、前回の収集で残った dora のプロセスを停止する。
 # （このリポジトリを作業ディレクトリにしている dora / ノードのみが対象）
 cleanup_before_start: true
@@ -79,3 +91,5 @@ entries:
     metadata: "metadata.yaml"
     can_setup: false
     build: true
+    # 動作確認のデータは本番の保存先に混ぜない。
+    dataset_root: "dummy_data"

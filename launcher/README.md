@@ -42,6 +42,27 @@ $ ./launcher/install.sh
 `<venv>/bin/uv` → リポジトリ直下の `.venv/bin/uv` → `~/.local/bin/uv` →
 `PATH` 上の `uv` の順に探します。
 
+### 収録データの保存先
+
+`launcher.yaml` の `dataset.root` に書きます。1 セッション 1 フォルダで
+`<root>/<日付>/<日時>/` に保存されます。
+
+```yaml
+dataset:
+  root: "/hdd_data"          # 例: /hdd_data/2026-08-06/2026-08-06_09-12-30/
+  date_format: "%Y-%m-%d"
+  session_format: "%Y-%m-%d_%H-%M-%S"
+```
+
+ランチャーが起動時にこのディレクトリを作り、dataflow の recorder ノードの
+`DIRECTORY` / `NAME` を差し替えます（dataflow を直接編集する必要はありません）。
+作成・書き込みができないとき（ディスクが未マウント等）は収集を始めずに
+画面へ日本語でエラーを出します。
+
+優先順位は `entry の dataset_root` > 環境変数 `DATASET_ROOT` > `dataset.root` です。
+ダミー収集の entry は `dataset_root: dummy_data` にしてあるので、動作確認の
+データが本番の保存先に混ざりません。
+
 ### メタデータが複数ある場合
 
 `launcher.yaml` の `entries` に追加して `install.sh` を再実行すると、

@@ -219,6 +219,7 @@ class Config:
         self.venv = raw.get("venv")
         self.uv = raw.get("uv")
         self.cleanup_before_start = bool(raw.get("cleanup_before_start", True))
+        self.dataset = raw.get("dataset") or {}
         self.can_setup = raw.get("can_setup") or {}
         self.entries = raw.get("entries") or []
         if not self.entries:
@@ -467,8 +468,45 @@ class Runner:
         stamp.write_text(current, encoding="utf-8")
         return True
 
+    def _dataset_target(self, entry):
+        """Return (directory, name) for the recorder: <root>/<date>/<datetime>."""
+        # entry の指定 > 環境変数 DATASET_ROOT > launcher.yaml
+        root = entry.get(
+            "dataset_root",
+            os.getenv("DATASET_ROOT") or self.config.dataset.get("root"),
+        )
+        if not root:
+            return None
+        path = pathlib.Path(str(root)).expanduser()
+        if not path.is_absolute():
+            path = self.config.repo_dir / path
+        now = datetime.datetime.now()
+        date = now.strftime(self.config.dataset.get("date_format", "%Y-%m-%d"))
+        session = now.strftime(
+            self.config.dataset.get("session_format", "%Y-%m-%d_%H-%M-%S")
+        )
+        return path / date, session
+
+    def _prepare_dataset_directory(self, directory):
+        """Create today's dataset directory, or say on screen why we cannot."""
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            probe = directory / ".launcher-write-test"
+            probe.touch()
+            probe.unlink()
+        except OSError as error:
+            self._fail(
+                f"データの保存先を用意できません: {directory}",
+                hint=(
+                    f"{error.strerror}。保存先のディスクがマウントされているか"
+                    "確認してください。改善しない場合は担当者に連絡してください。"
+                ),
+            )
+            return False
+        return True
+
     def _prepare_dataflow(self, entry):
-        """Return the dataflow to run, rewriting METADATA_FILE when overridden."""
+        """Return the dataflow to run, with metadata and dataset path applied."""
         dataflow_path = self.config.repo_dir / entry["dataflow"]
         if not dataflow_path.exists():
             self._fail(
@@ -477,30 +515,39 @@ class Runner:
             )
             return None
         metadata = entry.get("metadata")
-        if not metadata:
-            return dataflow_path
-        if not (self.config.repo_dir / metadata).exists():
+        if metadata and not (self.config.repo_dir / metadata).exists():
             self._fail(
                 f"メタデータが見つかりません: {self.config.repo_dir / metadata}",
                 hint="launcher/launcher.yaml の metadata を確認してください。",
             )
             return None
+        dataset = self._dataset_target(entry)
+        if dataset and not self._prepare_dataset_directory(dataset[0]):
+            return None
+
         dataflow = yaml.safe_load(dataflow_path.read_text(encoding="utf-8"))
-        changed = False
+        notes = []
         for node in dataflow.get("nodes", []):
             env = node.get("env") or {}
-            if "METADATA_FILE" in env and env["METADATA_FILE"] != metadata:
+            if metadata and "METADATA_FILE" in env and env["METADATA_FILE"] != metadata:
                 env["METADATA_FILE"] = metadata
                 node["env"] = env
-                changed = True
-        if not changed:
+                notes.append(f"metadata を {metadata} に差し替え")
+            if dataset and "dataset-recorder" in str(node.get("path", "")):
+                # <root>/<date>/<datetime>/ so every session keeps its own folder.
+                env["DIRECTORY"] = str(dataset[0])
+                env["NAME"] = dataset[1]
+                node["env"] = env
+                notes.append(f"保存先を {dataset[0] / dataset[1]} に設定")
+        if not notes:
             return dataflow_path
         generated = self.config.repo_dir / f".launcher-{entry['id']}.yaml"
         generated.write_text(
             yaml.safe_dump(dataflow, sort_keys=False, allow_unicode=True),
             encoding="utf-8",
         )
-        self._write(f"metadata を {metadata} に差し替えた {generated.name} を生成しました")
+        for note in dict.fromkeys(notes):
+            self._write(f"# {note}（{generated.name}）")
         return generated
 
     def _fail(self, message, hint=None):
