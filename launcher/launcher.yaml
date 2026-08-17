@@ -83,6 +83,14 @@ entries:
     can_setup: true
     build: true
 
+  - id: ker-pillowcase
+    name: "KER データ収集（枕カバータスク）"
+    description: "枕カバーの抜き取り／広げ／挿入を収集します"
+    dataflow: "dataflow-ker.yaml"
+    metadata: "metadata_pillowcase.yaml"
+    can_setup: true
+    build: true
+
   # 動作確認用。実機 (CAN / KER / カメラ) がなくても起動できるダミー構成。
   - id: dummy
     name: "ダミー収集（動作確認用）"

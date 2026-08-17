@@ -1,0 +1,81 @@
+# Copyright 2026 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# 枕カバーの着脱タスク（仮）。
+# 起動時にどのメタデータで収集するかは launcher/launcher.yaml の entry で選ぶ。
+#
+# タスク 2 の完了状態はタスク 3 の初期状態、タスク 3 の完了状態はタスク 1 の
+# 初期状態になっているので、3 つを順番に回すと初期状態に戻せる。
+
+location: Lab
+operator: Tester
+
+tasks:
+  # `prompt` / `description` はデータセットに記録される英語の指示。
+  # `description` には、そのタスクを始めるときの「期待する初期状態」を書く。
+  # `prompt_ja` / `description_ja` は作業者向けの表示専用（記録には影響しない）。
+  - prompt: Grasp the cased pillow and pull the pillow out of the case.
+    description: >-
+      The pillow is inside the pillowcase and lies in the middle of the table
+      with the opening of the case facing up. Done when the pillow is
+      completely out of the case.
+    prompt_ja: 枕カバーに入った枕をつかみ、枕をカバーから引き出してください。
+    description_ja: >-
+      初期状態: 枕をカバーに入れたまま、カバーの開口部を上に向けてテーブル
+      中央に置きます。完了状態: 枕がカバーから完全に抜けている。
+
+  - prompt: Lay the empty pillowcase flat with opening up and front face down.
+    description: >-
+      The empty pillowcase is scrambled in the middle of the table and the
+      pillow is set aside, off the working area. Done when the case is flat
+      with its long side horizontal and its opening facing up.
+    prompt_ja: 空の枕カバーを、開口部を上・表面を下にして平らに広げてください。
+    description_ja: >-
+      初期状態: 空の枕カバーをくしゃくしゃのままテーブル中央に置き、枕は作業
+      範囲の外へよけておきます。完了状態: カバーが平らに広がり、長辺が横向き、
+      開口部が上を向いている。
+
+  - prompt: Snug the pillow into the case, flip it so the opening is facing down.
+    description: >-
+      The empty pillowcase lies flat in the middle of the table, long side
+      horizontal, opening facing up, and the pillow is next to it within reach.
+      Done when the pillow is completely inserted and the front face is up.
+    prompt_ja: 枕をカバーに入れ、開口部が下を向くように裏返してください。
+    description_ja: >-
+      初期状態: 空の枕カバーを平らに広げ、長辺を横向き、開口部を上に向けて
+      テーブル中央に置きます。枕はその横（アームが届く範囲）に置きます。
+      完了状態: 枕が完全に入り、表面が上を向いている。
+
+equipment:
+  id: Test
+  version: "1.0"
+  embodiments:
+    arms:
+      id: OpenArm
+      version: "2.0"
+    lifter:
+      id: OpenArmCellLifter
+      version: "1.0"
+      mechanism: lead_screw
+      lead_length: 5.0
+      stroke: 300
+      home: bottom
+      unit: mm
+  perceptions:
+    cameras:
+      wrist_left: {}
+      wrist_right: {}
+      ceiling: {}
+      head_left: {}
+      head_right: {}
