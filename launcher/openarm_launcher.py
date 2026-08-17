@@ -45,7 +45,7 @@ import time
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 
 
 
@@ -231,6 +231,30 @@ class Config:
             if entry.get("id") == entry_id:
                 return entry
         return None
+
+    def resolve(self, entry_id, task_id=None):
+        """Return (entry, error) for one run, with the chosen task merged in.
+
+        An entry describes the setup to run (which dataflow), a task the
+        metadata to record with. The operator picks the task on screen, so an
+        entry that has tasks cannot start until one is chosen.
+        """
+        entry = self.entry(entry_id)
+        if entry is None:
+            return None, f"不明な entry です: {entry_id}"
+        tasks = entry.get("tasks") or []
+        if not tasks:
+            return dict(entry, entry=entry_id, task=None), None
+        task = next((t for t in tasks if str(t.get("id")) == str(task_id)), None)
+        if task is None:
+            return None, "タスクを選んでください"
+        merged = {k: v for k, v in entry.items() if k != "tasks"}
+        merged.update({k: v for k, v in task.items() if k not in ("id", "name")})
+        merged["id"] = f"{entry_id}-{task['id']}"
+        merged["entry"] = entry_id
+        merged["task"] = task["id"]
+        merged["name"] = f"{entry.get('name', entry_id)}／{task.get('name', task['id'])}"
+        return merged, None
 
     @property
     def ui_host_port(self):
@@ -440,15 +464,21 @@ class Runner:
             return False
         return True
 
-    def _build_stamp(self, entry, dataflow_path):
-        stamp = state_dir() / f"build-{entry['id']}.stamp"
-        current = f"{dataflow_path.stat().st_mtime_ns}"
+    def _build_stamp(self, entry):
+        """Return (stamp file, expected content) for the entry's nodes.
+
+        The build depends on the dataflow's nodes only, so the tasks of one
+        entry share a stamp: choosing another task must not rebuild them.
+        """
+        source = self.config.repo_dir / entry["dataflow"]
+        stamp = state_dir() / f"build-{entry.get('entry', entry['id'])}.stamp"
+        current = f"{source.stat().st_mtime_ns}"
         return stamp, current
 
     def _build(self, entry, dataflow_path, uv):
         if not entry.get("build", True):
             return True
-        stamp, current = self._build_stamp(entry, dataflow_path)
+        stamp, current = self._build_stamp(entry)
         if stamp.exists() and stamp.read_text(encoding="utf-8").strip() == current:
             return True
         self._set(step="ノードを準備しています…（初回は数分かかります）")
@@ -559,14 +589,14 @@ class Runner:
 
     # -- lifecycle -----------------------------------------------------
 
-    def start(self, entry_id):
-        """Start an entry. Returns (ok, message)."""
+    def start(self, entry_id, task_id=None):
+        """Start one task of an entry. Returns (ok, message)."""
+        entry, error = self.config.resolve(entry_id, task_id)
+        if entry is None:
+            return False, error
         with self.lock:
             if self.state in ("preparing", "running"):
                 return False, "すでに起動しています"
-            entry = self.config.entry(entry_id)
-            if entry is None:
-                return False, f"不明な entry です: {entry_id}"
             self.entry = entry
             self.state = "preparing"
             self.step = "起動を準備しています…"
@@ -575,7 +605,7 @@ class Runner:
             self.log.clear()
             self.hint = None
             self.started_at = _now()
-        self._open_log(entry_id)
+        self._open_log(entry["id"])
         threading.Thread(target=self._run, args=(entry,), daemon=True).start()
         return True, "起動しました"
 
@@ -850,6 +880,7 @@ button.secondary, .button.secondary {
   display: flex; justify-content: space-between; align-items: center; gap: 24px;
   background: #12121f; border-radius: 12px; padding: 20px 24px;
 }
+.card-title { font-size: 24px; font-weight: bold; color: #00e5ff; }
 .entry-name { font-size: 22px; font-weight: bold; }
 .entry-desc { font-size: 15px; color: #9a9ab0; margin-top: 4px; }
 details summary {
@@ -878,35 +909,94 @@ def _page(title, body):
 """
 
 
-def menu_page(config):
-    """Render the entry chooser (used when several metadata sets exist)."""
-    rows = []
-    for entry in config.entries:
-        rows.append(
-            f"""
-        <div class="entry">
-          <div>
-            <div class="entry-name">{html.escape(str(entry.get("name", entry["id"])))}</div>
-            <div class="entry-desc">{html.escape(str(entry.get("description", "")))}</div>
-          </div>
-          <form method="post" action="/start">
-            <input type="hidden" name="entry" value="{html.escape(str(entry["id"]))}">
-            <button type="submit">開始</button>
-          </form>
-        </div>"""
-        )
-    body = f"""
-    <h1>OpenArm データ収集</h1>
+def _start_form(entry_id, task_id, label):
+    """Render the form that POSTs one (entry, task) pair to /start."""
+    task_field = (
+        f'<input type="hidden" name="task" value="{html.escape(str(task_id))}">'
+        if task_id
+        else ""
+    )
+    return f"""<form method="post" action="/start">
+              <input type="hidden" name="entry" value="{html.escape(str(entry_id))}">
+              {task_field}
+              <button type="submit">{html.escape(label)}</button>
+            </form>"""
+
+
+def _row(name, description, form):
+    return f"""
+          <div class="entry">
+            <div>
+              <div class="entry-name">{html.escape(str(name))}</div>
+              <div class="entry-desc">{html.escape(str(description))}</div>
+            </div>
+            {form}
+          </div>"""
+
+
+def entry_card(entry):
+    """Render one configuration as a card with a start button per task."""
+    tasks = entry.get("tasks") or []
+    if tasks:
+        rows = [
+            _row(
+                task.get("name", task.get("id")),
+                task.get("description", ""),
+                _start_form(entry["id"], task.get("id"), "開始"),
+            )
+            for task in tasks
+        ]
+        sub_text = "収録するタスクを選んでください。"
+    else:
+        rows = [
+            _row(
+                entry.get("metadata", "収集を開始"),
+                entry.get("description", ""),
+                _start_form(entry["id"], None, "開始"),
+            )
+        ]
+        sub_text = str(entry.get("description", ""))
+    return f"""
     <div class="card">
-      <div class="sub">実施する収集を選んでください。</div>
+      <div class="card-title">{html.escape(str(entry.get("name", entry["id"])))}</div>
+      <div class="sub">{html.escape(sub_text)}</div>
       <div class="entry-list">{"".join(rows)}</div>
+    </div>"""
+
+
+CLEANUP_FORM = """
       <form method="post" action="/cleanup"
             onsubmit="return confirm('収集に関するプロセスをすべて強制停止します。よろしいですか？')">
         <button type="submit" class="secondary">すべて強制停止</button>
-      </form>
+      </form>"""
+
+
+def menu_page(config):
+    """Render every configuration and its tasks (the menu shortcut)."""
+    body = f"""
+    <h1>OpenArm データ収集</h1>
+    {"".join(entry_card(entry) for entry in config.entries)}
+    <div class="card">{CLEANUP_FORM}
     </div>
 """
     return _page("OpenArm データ収集 — 起動メニュー", body)
+
+
+def entry_page(config, entry):
+    """Render the task chooser of one configuration (a desktop shortcut)."""
+    others = ""
+    if len(config.entries) > 1:
+        others = """
+      <div class="buttons">
+        <a class="button secondary" href="/menu">ほかの構成を選ぶ</a>
+      </div>"""
+    body = f"""
+    <h1>OpenArm データ収集</h1>
+    {entry_card(entry)}
+    <div class="card">{others}{CLEANUP_FORM}
+    </div>
+"""
+    return _page(f"OpenArm データ収集 — {entry.get('name', entry['id'])}", body)
 
 
 STATUS_SCRIPT = """
@@ -967,10 +1057,7 @@ function errorHtml(s) {
       ${s.hint ? `<div class="error-hint">${esc(s.hint)}</div>` : ""}
       ${items ? `<ul class="error-list">${items}</ul>` : ""}
       <div class="buttons">
-        <form method="post" action="/start">
-          <input type="hidden" name="entry" value="${esc(s.entry ? s.entry.id : "")}">
-          <button type="submit">再試行</button>
-        </form>
+        ${startForm(s, "再試行")}
         <a class="button secondary" href="/log" target="_blank">詳しいログを見る</a>
         ${cleanupButton()}
         <a class="button secondary" href="/menu">メニューに戻る</a>
@@ -985,15 +1072,22 @@ function stoppedHtml(s) {
       <div class="step">終了しました</div>
       <div class="sub">データ収集を終了しました。もう一度始めるには「再開」を押してください。</div>
       <div class="buttons">
-        <form method="post" action="/start">
-          <input type="hidden" name="entry" value="${esc(s.entry ? s.entry.id : "")}">
-          <button type="submit">再開</button>
-        </form>
+        ${startForm(s, "再開")}
         ${cleanupButton()}
         <a class="button secondary" href="/menu">メニューに戻る</a>
       </div>
       ${logHtml(s)}
     </div>`;
+}
+
+function startForm(s, label) {
+  const e = s.entry || {};
+  return `
+    <form method="post" action="/start">
+      <input type="hidden" name="entry" value="${esc(e.entry || e.id || "")}">
+      <input type="hidden" name="task" value="${esc(e.task || "")}">
+      <button type="submit">${esc(label)}</button>
+    </form>`;
 }
 
 function cleanupButton() {
@@ -1065,16 +1159,28 @@ class Handler(BaseHTTPRequestHandler):
         """Serve the status page, the menu, the JSON status and the log."""
         path = urlparse(self.path).path
         if path == "/":
-            state = self.runner.state
-            if state == "idle" and len(self.config.entries) > 1:
-                self._send(200, "text/html; charset=utf-8", menu_page(self.config))
-            elif state == "idle":
-                self.runner.start(self.config.entries[0]["id"])
+            first = self.config.entries[0]
+            if self.runner.state != "idle":
                 self._send(200, "text/html; charset=utf-8", status_page(self.runner))
+            elif len(self.config.entries) > 1:
+                self._send(200, "text/html; charset=utf-8", menu_page(self.config))
+            elif first.get("tasks"):
+                # One configuration, several tasks: the operator still chooses.
+                self._send(200, "text/html; charset=utf-8", entry_page(self.config, first))
             else:
+                self.runner.start(first["id"])
                 self._send(200, "text/html; charset=utf-8", status_page(self.runner))
         elif path == "/menu":
             self._send(200, "text/html; charset=utf-8", menu_page(self.config))
+        elif path == "/entry":
+            query = parse_qs(urlparse(self.path).query)
+            entry = self.config.entry((query.get("id") or [""])[0])
+            if entry is None:
+                self._redirect("/menu")
+            elif self.runner.state in ("idle", "stopped", "error"):
+                self._send(200, "text/html; charset=utf-8", entry_page(self.config, entry))
+            else:
+                self._send(200, "text/html; charset=utf-8", status_page(self.runner))
         elif path == "/status":
             snapshot = self.runner.snapshot()
             self._send(
@@ -1105,8 +1211,13 @@ class Handler(BaseHTTPRequestHandler):
         form = parse_qs(raw)
         if path == "/start":
             entry_id = (form.get("entry") or [""])[0] or self.config.entries[0]["id"]
-            self.runner.start(entry_id)
-            self._redirect("/")
+            task_id = (form.get("task") or [""])[0] or None
+            ok, _ = self.runner.start(entry_id, task_id)
+            if not ok and self.runner.state in ("idle", "stopped", "error"):
+                # No task chosen (or a bad id): back to the chooser.
+                self._redirect(f"/entry?id={quote(entry_id)}")
+            else:
+                self._redirect("/")
         elif path == "/stop":
             self.runner.stop()
             self._redirect("/")
@@ -1138,7 +1249,7 @@ def port_in_use(port):
         return False
 
 
-def retry_running_instance(url, entry_id):
+def retry_running_instance(url, entry_id, task_id=None):
     """Ask an already-running launcher to start `entry_id` when it is idle."""
     if not entry_id:
         return False
@@ -1150,9 +1261,12 @@ def retry_running_instance(url, entry_id):
     if state not in ("idle", "stopped", "error"):
         return False
     try:
+        data = f"entry={quote(entry_id)}"
+        if task_id:
+            data += f"&task={quote(str(task_id))}"
         request = urllib.request.Request(
             url.rstrip("/") + "/start",
-            data=f"entry={entry_id}".encode(),
+            data=data.encode(),
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             method="POST",
         )
@@ -1200,6 +1314,7 @@ def main():
     default_config = pathlib.Path(__file__).resolve().parent / "launcher.yaml"
     parser.add_argument("--config", default=str(default_config), help="launcher.yaml")
     parser.add_argument("--entry", help="起動する entry の id")
+    parser.add_argument("--task", help="収録するタスクの id（省略すると画面で選ぶ）")
     parser.add_argument("--port", type=int, help="待ち受けポート")
     parser.add_argument(
         "--no-browser", action="store_true", help="ブラウザを自動で開かない"
@@ -1231,15 +1346,30 @@ def main():
         )
         return 0
 
+    entry = config.entry(args.entry) if args.entry else None
+    if args.entry and entry is None:
+        show_desktop_error(
+            f"不明な entry です: {args.entry}\n\n"
+            "launcher/launcher.yaml と、デスクトップのショートカットが"
+            "食い違っています。担当者に連絡してください。"
+        )
+        return 1
+    if entry is None and len(config.entries) == 1:
+        entry = config.entries[0]
+    # An entry with tasks waits for the operator to choose one on screen.
+    autostart = entry is not None and (args.task or not entry.get("tasks"))
+    target = (
+        url
+        if autostart or entry is None
+        else url + f"entry?id={quote(entry['id'])}"
+    )
+
     if port_in_use(port):
         # Already running: bring its page up. A second click is also how the
         # operator retries, so restart the entry unless it is busy.
-        entry_id = args.entry or (
-            config.entries[0]["id"] if len(config.entries) == 1 else None
-        )
-        retried = retry_running_instance(url, entry_id)
+        retried = autostart and retry_running_instance(url, entry["id"], args.task)
         if not args.no_browser:
-            open_browser(url)
+            open_browser(target)
         print(
             f"ランチャーはすでに起動しています: {url}"
             + ("（再試行しました）" if retried else "")
@@ -1264,15 +1394,13 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"ランチャーを起動しました: {url}")
 
-    if args.entry:
-        ok, message = runner.start(args.entry)
+    if autostart:
+        ok, message = runner.start(entry["id"], args.task)
         if not ok:
             print(message, file=sys.stderr)
-    elif len(config.entries) == 1:
-        runner.start(config.entries[0]["id"])
 
     if not args.no_browser:
-        open_browser(url)
+        open_browser(target)
 
     try:
         # SIGTERM (`pkill openarm_launcher.py`) must end the process, otherwise

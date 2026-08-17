@@ -19,6 +19,8 @@
 #
 # 行うこと:
 #   1. launcher.yaml の entry ごとにデスクトップショートカットを作成
+#      (shortcut: false の entry はメニューからのみ選ぶ。収録するタスクは
+#       アイコンをダブルクリックしたあとの画面で選ぶ)
 #   2. CAN 設定コマンドをパスワードなし sudo で実行できるようにする
 #      (アルバイトがターミナルでパスワードを入力しないで済むようにするため)
 
@@ -54,6 +56,9 @@ import yaml
 
 config = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
 for entry in config.get("entries") or []:
+    # shortcut: false の entry はアイコンを作らない (メニューからのみ)。
+    if not entry.get("shortcut", True):
+        continue
     print("\t".join([
         str(entry.get("id", "")),
         str(entry.get("name", entry.get("id", ""))),
@@ -63,10 +68,12 @@ PY
 )"
 
 entry_count=0
+keep_files=("openarm-data-collection-stop.desktop")
 while IFS=$'\t' read -r id name description; do
   [ -z "${id}" ] && continue
   entry_count=$((entry_count + 1))
   desktop_file="${APPLICATIONS_DIR}/openarm-data-collection-${id}.desktop"
+  keep_files+=("$(basename "${desktop_file}")")
   cat > "${desktop_file}" <<EOF
 [Desktop Entry]
 Type=Application
@@ -93,6 +100,7 @@ done <<< "${entries}"
 # entry が複数あるときは「どれを実施するか選ぶ」入口も置く。
 if [ "${entry_count}" -gt 1 ]; then
   menu_file="${APPLICATIONS_DIR}/openarm-data-collection-menu.desktop"
+  keep_files+=("$(basename "${menu_file}")")
   cat > "${menu_file}" <<EOF
 [Desktop Entry]
 Type=Application
@@ -137,6 +145,26 @@ if command -v gio >/dev/null 2>&1; then
     metadata::trusted true 2>/dev/null || true
 fi
 echo "  作成: データ収集を強制停止"
+
+# 設定から消えた entry のショートカットが残ると、押しても起動しない
+# アイコンになるので消す。
+for dir in "${APPLICATIONS_DIR}" "${DESKTOP_DIR}"; do
+  for file in "${dir}"/openarm-data-collection-*.desktop; do
+    [ -e "${file}" ] || continue
+    base="$(basename "${file}")"
+    keep=false
+    for valid in "${keep_files[@]}"; do
+      if [ "${base}" = "${valid}" ]; then
+        keep=true
+        break
+      fi
+    done
+    if [ "${keep}" = false ]; then
+      rm -f "${file}"
+      echo "  削除: ${base}（設定にない古いショートカット）"
+    fi
+  done
+done
 
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "${APPLICATIONS_DIR}" 2>/dev/null || true

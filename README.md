@@ -14,9 +14,10 @@ before pressing start.
 
 [`metadata_tableware.yaml`](metadata_tableware.yaml) and
 [`metadata_pillowcase.yaml`](metadata_pillowcase.yaml) are further (provisional)
-task sets. Which metadata a session uses is chosen from the desktop launcher: one
-entry in [`launcher/launcher.yaml`](launcher/launcher.yaml) per metadata file,
-one shortcut per entry.
+task sets. Which metadata a session uses is chosen from the desktop launcher:
+[`launcher/launcher.yaml`](launcher/launcher.yaml) has one entry per teleoperation
+setup (KER, VR), each listing the task sets it can record, and the operator picks
+the task on screen after starting the shortcut.
 
 ### Desktop launcher
 
@@ -36,7 +37,10 @@ the `ui` node).
 
 ### Real configuration
 
-TODO
+[`dataflow-ker.yaml`](dataflow-ker.yaml) teleoperates OpenArm with the KER
+leader arms, [`dataflow-vr.yaml`](dataflow-vr.yaml) with a VR headset (Quest).
+Both record the same task sets, so the launcher has one entry each and
+lists the task sets inside it.
 
 ### Dummy configuration
 
