@@ -1,0 +1,83 @@
+# Copyright 2026 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# dataflow-webxr.yaml / dataflow-webxr-mujoco.yaml の webxr ノードが
+# 読む表示設定（VIEW_CONFIGURATION_FILE）。ノードは起動時に一度だけ
+# 読むので、変えたらデータフローを起動し直すこと。
+#
+# 既定は「頭部カメラの右目画像を 1 枚、部屋に固定して出す」。カメラの
+# 校正値がいらないので、どの頭部カメラでもそのまま動く。
+# 左右 2 枚の立体視にするには下の「立体視にする場合」を参照。
+
+# 出す枚数。
+#   mono   : camera_head_right の 1 枚だけ（校正不要）
+#   stereo : 左右 1 枚ずつ（camera_head_left も必要。下記の校正が必要）
+#   none   : カメラを出さない（パススルーだけ／コントローラ操作のみ）
+view: mono
+
+session:
+  # immersive-ar は周りの部屋が見えたまま、immersive-vr は真っ暗になる。
+  # 実機のセルの横に立って操作するので、既定は周りが見える ar。
+  mode: immersive-ar
+
+panel:
+  # 画像をどこに掛けるか。
+  #   room : セッション開始時にヘッドセットが向いていた場所に置いたまま。
+  #          作業台の方を向いて立つ運用ならこちら（顔を横に向けると外れる）。
+  #   head : 視線について回る。立体視のときはこちら。
+  lock: room
+
+  # 何メートル先に掛けるか。Quest 3 は表示内容によらず約 1.3 m に
+  # ピントが合うので、合わせておくと目が楽。
+  distance: 1.3
+
+  # 幅（メートル）。高さは画像のアスペクト比から決まる。
+  width: 1.5
+
+pose:
+  # arm_origin サイト（胸の高さ）から見た手の中立位置（メートル）。
+  # 書かなければノード内蔵の既定値 [-0.085, 0, -0.14] を使う。セルの
+  # 実機で「手を下ろした位置」がずれるときだけ、実測してここに書く。
+  # MuJoCo の例（nodes/dora-openarm-webxr/example/view_camera.yaml）は
+  # [-0.1, 0.0, 0.23] だが、これはデモシーン用の値なので流用しないこと。
+  # frame_offset: [-0.085, 0.0, -0.14]
+
+  # 目から首の回転軸まで（ヘッドセット座標系、-z 前・+y 上、メートル）。
+  # 手の位置をヘッドセットではなくこの軸を基準に測るので、首を振っても
+  # 目標がヘッドセットの描く弧に沿って振られない。作業者ごとに測るには
+  # webxr ノードを --calibration 付きで起動し、Y ボタンを押したまま首を
+  # 振る。測定結果は --neck-pivot-file（既定 neck_pivot.yaml）に書かれ、
+  # そちらがここの値より優先される。[0, 0, 0] でヘッドセット基準に戻る。
+  neck_pivot_offset: [0.0, -0.075, 0.080]
+
+# ── 立体視にする場合 ────────────────────────────────────────────
+#
+# 上の view を stereo、panel.lock を head に変えたうえで、下の 2 ブロックの
+# コメントを外して頭部ステレオカメラの実測値を入れる。値は片目分の画像
+# （dataflow-webxr.yaml では 2560x720 を左右に割った 1280x720）に対するもの。
+# 目分量の値を入れると目が疲れるので、必ずカメラの校正値から出すこと。
+# ZED 系カメラなら nodes/dora-openarm-webxr/example/zed_view_parameters.py
+# が工場校正から算出する。
+#
+# camera:
+#   # 画像が視野の何度分を占めるか。大きいほど画面を覆うが拡大され、
+#   # 左右の画像のずれも拡大されて融像できる奥行きが狭くなる。
+#   horizontal_fov: 79.4
+#   vertical_fov: 50.1
+#
+# stereo:
+#   # 右目画像のずらし量（元画像のピクセル）。レンズが揃っていない分の補正。
+#   vertical_align: 10.0
+#   # 横方向。負に大きいほど手前、正に大きいほど奥に見える。
+#   convergence: -1.7

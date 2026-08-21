@@ -58,6 +58,21 @@ dataset:
 # （このリポジトリを作業ディレクトリにしている dora / ノードのみが対象）
 cleanup_before_start: true
 
+# WebXR 構成（entry の `webxr:`）の既定値。
+# ヘッドセットのブラウザから HTTPS でつなぐので、
+#   - 自己署名証明書が要る（launcher/install.sh が作る）
+#   - 作業者に開いてもらう URL を画面に出す必要がある
+# の 2 つが VR（Quest 専用アプリ + UDP）と違う。証明書が無いまま起動すると
+# dora のスタックトレースになってしまうので、ランチャーが先に確認する。
+#
+#   webxr:
+#     # 省略すると server.host（install.sh が書く）→
+#     # <この PC のホスト名>.local の順に決める。
+#     hostname: null
+#     port: 8443
+#     tls_certificate: "nodes/dora-openarm-webxr/example/server.crt"
+#     tls_key: "nodes/dora-openarm-webxr/example/server.key"
+
 # CAN インタフェースの設定コマンド。
 # 再起動後や USB を挿し直した後に必要になる。sudo を無人で通すため、
 # launcher/install.sh が /etc/sudoers.d/openarm-can を導入する。
@@ -67,7 +82,7 @@ can_setup:
   interfaces: ["can0", "can1", "can2", "can3"]
 
 entries:
-  # ショートカットは構成ごとに 1 つ（KER / VR）。
+  # ショートカットは構成ごとに 1 つ（KER / VR / WebXR）。
   # どのタスク（metadata）を収録するかは、起動後の画面で選ぶ。
   - id: ker
     name: "KER データ収集"
@@ -111,6 +126,33 @@ entries:
         description: "枕カバーの抜き取り／広げ／挿入"
         metadata: "metadata_pillowcase.yaml"
 
+  # VR と同じ実機構成だが、Quest 専用アプリではなくヘッドセットのブラウザ
+  # (WebXR) でつなぐ。作業者は起動画面に出る URL をヘッドセットで開く。
+  - id: webxr
+    name: "WebXR データ収集"
+    description: "ヘッドセットのブラウザで OpenArm を操作します"
+    dataflow: "dataflow-webxr.yaml"
+    can_setup: true
+    build: true
+    webxr:
+      port: 8443
+      tls_certificate: "nodes/dora-openarm-webxr/example/server.crt"
+      tls_key: "nodes/dora-openarm-webxr/example/server.key"
+    tasks:
+      # 収録するタスク（metadata）。起動後の画面で選ぶ。
+      - id: standard
+        name: "標準タスク"
+        description: "metadata.yaml のタスク一式"
+        metadata: "metadata.yaml"
+      - id: tableware
+        name: "食器タスク"
+        description: "箸・スプーンの箱入れ／箱空け"
+        metadata: "metadata_tableware.yaml"
+      - id: pillowcase
+        name: "枕カバータスク"
+        description: "枕カバーの抜き取り／広げ／挿入"
+        metadata: "metadata_pillowcase.yaml"
+
   # 動作確認用。実機 (CAN / KER / カメラ) がなくても起動できるダミー構成。
   # デスクトップにアイコンは作らず、メニュー画面からのみ選べる。
   - id: dummy
@@ -136,3 +178,25 @@ entries:
         name: "枕カバータスク"
         description: "枕カバーの抜き取り／広げ／挿入"
         metadata: "metadata_pillowcase.yaml"
+
+  # ヘッドセットの接続確認用。実機 (CAN / カメラ) は使わず MuJoCo の中の
+  # OpenArm を動かす。証明書とヘッドセットの設定だけを確かめたいときに使う。
+  # デスクトップにアイコンは作らず、メニュー画面からのみ選べる。
+  - id: webxr-mujoco
+    name: "WebXR 接続確認（MuJoCo）"
+    description: "実機なしでヘッドセットからの操作を確認します"
+    dataflow: "dataflow-webxr-mujoco.yaml"
+    can_setup: false
+    build: true
+    shortcut: false
+    webxr:
+      port: 8443
+      tls_certificate: "nodes/dora-openarm-webxr/example/server.crt"
+      tls_key: "nodes/dora-openarm-webxr/example/server.key"
+    # 動作確認のデータは本番の保存先に混ぜない。
+    dataset_root: "dummy_data"
+    tasks:
+      - id: mujoco
+        name: "MuJoCo タスク"
+        description: "metadata_mujoco.yaml のタスク一式"
+        metadata: "metadata_mujoco.yaml"

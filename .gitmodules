@@ -1,6 +1,7 @@
 [submodule "nodes/dora-openarm-data-collection-ui"]
 	path = nodes/dora-openarm-data-collection-ui
-	url = https://github.com/enactic/dora-openarm-data-collection-ui.git
+	url = https://github.com/euyniy/dora-openarm-data-collection-ui.git
+	branch = ops
 [submodule "nodes/dora-openarm-quitter"]
 	path = nodes/dora-openarm-quitter
 	url = https://github.com/enactic/dora-openarm-quitter.git
@@ -37,3 +38,6 @@
 [submodule "nodes/dora-openarm-vr"]
 	path = nodes/dora-openarm-vr
 	url = https://github.com/enactic/dora-openarm-vr.git
+[submodule "nodes/dora-openarm-webxr"]
+	path = nodes/dora-openarm-webxr
+	url = https://github.com/enactic/dora-openarm-webxr.git

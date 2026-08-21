@@ -4,10 +4,11 @@
 デスクトップのショートカットをダブルクリックするだけで、
 
 1. 画面に出た一覧から、収録するタスク（metadata）を選ぶ
-2. CAN インタフェースの設定（`sudo openarm-can-configure-socketcan-4-arms -fd`）
-3. 必要なら `uv run dora build <dataflow> --uv`
-4. `uv run dora run <dataflow> --uv`
-5. タスク画面（`dora-openarm-data-collection-ui`）へ自動で切り替え
+2. WebXR 構成なら TLS 証明書の確認と、ヘッドセットで開く URL の表示
+3. CAN インタフェースの設定（`sudo openarm-can-configure-socketcan-4-arms -fd`）
+4. 必要なら `uv run dora build <dataflow> --uv`
+5. `uv run dora run <dataflow> --uv`
+6. タスク画面（`dora-openarm-data-collection-ui`）へ自動で切り替え
 
 までが実行されます。途中で失敗した場合は、ターミナルではなく画面に赤字で
 エラー内容が表示されます。
@@ -18,9 +19,11 @@
 | --- | --- |
 | `launcher.yaml` | 構成（entry）と、その中で選べるタスク（`tasks`）の定義 |
 | `openarm_launcher.py` | ランチャー本体（標準ライブラリ + PyYAML のみ） |
-| `install.sh` | ショートカット作成と sudo 設定（管理者が一度だけ実行） |
+| `install.sh` | ショートカット作成、WebXR の TLS 証明書作成、sudo 設定（管理者が一度だけ実行） |
 | （生成）`データ収集を強制停止` | `--kill` を呼ぶショートカット |
 | `openarm-can.sudoers` | `/etc/sudoers.d/openarm-can` の雛形 |
+| [`../view-webxr.yaml`](../view-webxr.yaml) | ヘッドセットに頭部カメラをどう出すか（WebXR 構成） |
+| （生成）`nodes/dora-openarm-webxr/example/server.{crt,key,host}` | WebXR の TLS 証明書と、発行したホスト名 |
 
 ## 管理者向け: 初期セットアップ
 
@@ -34,6 +37,9 @@ $ ./launcher/install.sh
   （entry が複数あるときは「メニュー」ショートカットも作成。
   `shortcut: false` の entry はアイコンを作らず、メニューからのみ選べます。
   設定から消えた entry の古いショートカットは削除されます）
+- WebXR 構成（entry に `webxr:` があるもの）の TLS 証明書を作成
+  （下の「WebXR 構成」を参照。既に同じホスト名の有効な証明書があるときは
+  作り直しません）
 - `/etc/sudoers.d/openarm-can` を導入し、CAN 設定コマンドだけを
   パスワードなしで実行できるようにする（作業者がパスワードを打たずに
   済むようにするため。許可するのは
@@ -90,6 +96,7 @@ entries:
 
 - タスクを増やす: `tasks` に 1 項目足すだけ（`install.sh` の再実行は不要）
 - 構成を増やす: `entries` に足して `install.sh` を再実行（アイコンが増える）
+- WebXR の構成には `webxr:` を書く（下の「WebXR 構成」を参照）
 - `tasks` を書かなければ、従来どおり entry 直下の `metadata` で起動します
 - タスク側には `metadata` のほか `dataset_root` などの entry と同じ項目も
   書けます（書いた項目が entry の値を上書きします）
@@ -98,6 +105,62 @@ dataflow 側の `METADATA_FILE` と選んだタスクの `metadata` が違うと
 `METADATA_FILE` を差し替えた `.launcher-<entry>-<task>.yaml` を自動生成して
 実行します（このファイルは `.gitignore` 済み）。`dora build` の結果は
 dataflow 単位で覚えるので、同じ構成でタスクを変えても再ビルドは走りません。
+
+### WebXR 構成
+
+`webxr` entry は VR entry と同じ実機構成ですが、Quest 専用アプリと UDP で
+つなぐ代わりに、ヘッドセットのブラウザから WebXR でつなぎます
+（`dataflow-webxr.yaml`）。作業者側の手順が 1 つ増えます。
+
+- 作業者は **ヘッドセットのブラウザ** で `https://<ホスト名>.local:8443/` を
+  開き、「Start」を押す。この URL は起動画面（タスク選択画面と「起動中…」の
+  画面）に大きく表示されます
+- 自己署名証明書なので、初回はブラウザが警告を出します。「詳細設定」から
+  続行してください
+
+WebXR は HTTPS でないと動かないので、証明書が要ります。`install.sh` が
+`nodes/dora-openarm-webxr/example/` に自己署名証明書を作り、使ったホスト名を
+`server.host` に記録します。ランチャーはこれを読んで、証明書と食い違わない
+URL を画面に出します。
+
+```console
+$ ./launcher/install.sh                              # <ホスト名>.local で作成
+$ WEBXR_HOSTNAME=192.168.1.20 ./launcher/install.sh  # 名前が引けないとき
+```
+
+`.local` がヘッドセットから引けるかは、次のコマンドで確認できます。
+
+```console
+$ avahi-resolve --name $(hostname).local
+```
+
+証明書が無いまま起動しようとすると、`dora` のスタックトレースではなく
+「WebXR の TLS 証明書がありません」と画面に出て止まります。
+
+`entry` に書ける項目は次のとおりです（すべて省略できます）。
+
+```yaml
+  - id: webxr
+    dataflow: "dataflow-webxr.yaml"
+    webxr:
+      # 画面に出す URL のホスト名。省略すると server.host →
+      # <この PC のホスト名>.local の順に決める。
+      hostname: null
+      port: 8443
+      tls_certificate: "nodes/dora-openarm-webxr/example/server.crt"
+      tls_key: "nodes/dora-openarm-webxr/example/server.key"
+```
+
+ヘッドセットに頭部カメラをどう出すかは、リポジトリ直下の
+[`view-webxr.yaml`](../view-webxr.yaml) で決めます。既定は「右目の画像を
+1 枚、部屋に固定」で、カメラの校正値がいらないためどの頭部カメラでも
+そのまま動きます。左右 2 枚の立体視にするには、頭部ステレオカメラの
+校正値が必要です（同ファイルのコメント参照）。
+
+ヘッドセットの接続確認だけをしたいときは、実機を使わない
+`webxr-mujoco` entry（`dataflow-webxr-mujoco.yaml`、CAN 設定なし、保存先は
+`dummy_data/`）をメニューから選んでください。証明書とネットワークと
+ヘッドセットの設定を、セルを止めずに確認できます。
 
 ### 実機がない PC での動作確認
 
@@ -109,12 +172,14 @@ dataflow 単位で覚えるので、同じ構成でタスクを変えても再�
 
 ## 作業者向け: 使い方
 
-1. デスクトップのショートカット（例: 「KER データ収集」「VR データ収集」）を
-   ダブルクリック
+1. デスクトップのショートカット（例: 「KER データ収集」「VR データ収集」
+   「WebXR データ収集」）をダブルクリック
 2. 出てきた一覧から、これから収録するタスクの「開始」を押す
 3. 「起動中…」の画面が出るので待つ（初回は数分かかることがあります）
-4. 自動でタスク画面に切り替わったら「スタート」を押して収録開始
-5. 赤い画面が出たら、書かれている内容を担当者に伝える（「再試行」で再起動）
+4. WebXR のときは、画面に出ている URL をヘッドセットのブラウザで開き、
+   「Start」を押す（証明書の警告は「詳細設定」から続行）
+5. 自動でタスク画面に切り替わったら「スタート」を押して収録開始
+6. 赤い画面が出たら、書かれている内容を担当者に伝える（「再試行」で再起動）
 
 「再試行」「再開」は、そのとき選んでいたタスクのまま起動し直します。
 別のタスクに変えるときは「メニューに戻る」から選び直してください。

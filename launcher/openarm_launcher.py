@@ -117,6 +117,43 @@ ERROR_IGNORE_PATTERNS = (
 )
 
 
+WEBXR_DEFAULT_PORT = 8443
+
+
+def webxr_target(repo_dir, settings):
+    """Return (url, certificate, key) for an entry that uses the WebXR node.
+
+    The operator opens the URL in the headset's own browser, so it has to
+    name this PC on the network rather than localhost, and it has to be the
+    host name the certificate was issued for. install.sh records that name
+    beside the certificate, so the page cannot offer a URL the headset would
+    reject.
+    """
+    certificate = repo_dir / settings.get(
+        "tls_certificate", "nodes/dora-openarm-webxr/example/server.crt"
+    )
+    key = repo_dir / settings.get(
+        "tls_key", "nodes/dora-openarm-webxr/example/server.key"
+    )
+    host = settings.get("hostname") or _webxr_host(certificate)
+    port = int(settings.get("port", WEBXR_DEFAULT_PORT))
+    return f"https://{host}:{port}/", certificate, key
+
+
+def _webxr_host(certificate):
+    """Return the host name the certificate was issued for."""
+    marker = certificate.with_suffix(".host")
+    try:
+        recorded = marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        recorded = ""
+    if recorded:
+        return recorded
+    # No marker (a hand-made certificate): guess the way install.sh does.
+    host = socket.gethostname()
+    return host if "." in host else f"{host}.local"
+
+
 def _read_cmdline(pid):
     try:
         raw = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes()
@@ -292,6 +329,8 @@ class Runner:
         self.step = ""
         self.hint = None
         self.entry = None
+        # The URL the operator opens in the headset (WebXR entries only).
+        self.webxr_url = None
         self.errors = []  # [{"time", "text"}]
         self.log = collections.deque(maxlen=LOG_LINES)
         self.log_path = None
@@ -312,6 +351,7 @@ class Runner:
                 "step": self.step,
                 "hint": self.hint,
                 "entry": self.entry,
+                "webxr_url": self.webxr_url,
                 "errors": list(self.errors[-ERROR_LINES:]),
                 "log_tail": list(self.log)[-ERROR_LINES:],
                 "ui_url": self.config.ui_url,
@@ -464,6 +504,45 @@ class Runner:
             return False
         return True
 
+    def _prepare_webxr(self, entry):
+        """Check the TLS certificate an entry's WebXR node needs.
+
+        Without it the node dies inside `dora run` with a stack trace the
+        operator cannot act on, so say what is missing and who fixes it.
+        """
+        settings = entry.get("webxr")
+        if not settings:
+            return True
+        url, certificate, key = webxr_target(self.config.repo_dir, settings)
+        missing = [path for path in (certificate, key) if not path.exists()]
+        if missing:
+            self._fail(
+                "WebXR の TLS 証明書がありません: "
+                + "、".join(str(path) for path in missing),
+                hint=(
+                    "管理者が launcher/install.sh を一度実行すると作成されます。"
+                    "担当者に連絡してください。"
+                ),
+            )
+            return False
+        unreadable = [
+            path for path in (certificate, key) if not os.access(path, os.R_OK)
+        ]
+        if unreadable:
+            self._fail(
+                "WebXR の TLS 証明書を読めません: "
+                + "、".join(str(path) for path in unreadable),
+                hint=(
+                    "証明書を作った利用者と、いま収集している利用者が違う可能性が"
+                    "あります。管理者に launcher/install.sh の再実行を依頼してください。"
+                ),
+            )
+            return False
+        with self.lock:
+            self.webxr_url = url
+        self._write(f"# ヘッドセットのブラウザで開く URL: {url}")
+        return True
+
     def _build_stamp(self, entry):
         """Return (stamp file, expected content) for the entry's nodes.
 
@@ -604,6 +683,7 @@ class Runner:
             self._seen_errors.clear()
             self.log.clear()
             self.hint = None
+            self.webxr_url = None
             self.started_at = _now()
         self._open_log(entry["id"])
         threading.Thread(target=self._run, args=(entry,), daemon=True).start()
@@ -620,6 +700,8 @@ class Runner:
         if self.config.cleanup_before_start:
             self._set(step="前回のプロセスを片付けています…")
             self.cleanup_stale("起動前")
+        if not self._prepare_webxr(entry):
+            return
         if entry.get("can_setup", True) and not self._setup_can():
             return
         dataflow_path = self._prepare_dataflow(entry)
@@ -881,6 +963,14 @@ button.secondary, .button.secondary {
   background: #12121f; border-radius: 12px; padding: 20px 24px;
 }
 .card-title { font-size: 24px; font-weight: bold; color: #00e5ff; }
+.notice {
+  background: rgba(0, 229, 255, 0.08); border-left: 4px solid #00e5ff;
+  border-radius: 8px; padding: 14px 18px; font-size: 17px; line-height: 1.8;
+}
+.notice .url {
+  display: block; font-family: ui-monospace, monospace; font-size: 22px;
+  font-weight: bold; color: #00e5ff; margin-top: 6px; word-break: break-all;
+}
 .entry-name { font-size: 22px; font-weight: bold; }
 .entry-desc { font-size: 15px; color: #9a9ab0; margin-top: 4px; }
 details summary {
@@ -934,7 +1024,34 @@ def _row(name, description, form):
           </div>"""
 
 
-def entry_card(entry):
+def webxr_notice(config, entry):
+    """Tell the operator which URL to open in the headset, if this entry needs one.
+
+    A WebXR entry is driven from the headset's own browser, so nothing
+    happens until the operator opens that page and presses "Start" there.
+    """
+    settings = entry.get("webxr")
+    if not settings:
+        return ""
+    url, certificate, key = webxr_target(config.repo_dir, settings)
+    if not (certificate.exists() and key.exists()):
+        # Starting would fail the same way, but saying so here saves the
+        # operator a start, a red screen and a walk to the headset.
+        return """
+      <div class="notice">
+        ⚠ この構成の TLS 証明書がまだありません。管理者に
+        <code>launcher/install.sh</code> の実行を依頼してください。
+      </div>"""
+    return f"""
+      <div class="notice">
+        ヘッドセットをかぶって、ヘッドセットのブラウザで次の URL を開き、
+        「Start」を押してください（この PC のブラウザではありません）。
+        証明書の警告が出たら「詳細設定」から続行してください。
+        <span class="url">{html.escape(url)}</span>
+      </div>"""
+
+
+def entry_card(config, entry):
     """Render one configuration as a card with a start button per task."""
     tasks = entry.get("tasks") or []
     if tasks:
@@ -959,7 +1076,7 @@ def entry_card(entry):
     return f"""
     <div class="card">
       <div class="card-title">{html.escape(str(entry.get("name", entry["id"])))}</div>
-      <div class="sub">{html.escape(sub_text)}</div>
+      <div class="sub">{html.escape(sub_text)}</div>{webxr_notice(config, entry)}
       <div class="entry-list">{"".join(rows)}</div>
     </div>"""
 
@@ -975,7 +1092,7 @@ def menu_page(config):
     """Render every configuration and its tasks (the menu shortcut)."""
     body = f"""
     <h1>OpenArm データ収集</h1>
-    {"".join(entry_card(entry) for entry in config.entries)}
+    {"".join(entry_card(config, entry) for entry in config.entries)}
     <div class="card">{CLEANUP_FORM}
     </div>
 """
@@ -992,7 +1109,7 @@ def entry_page(config, entry):
       </div>"""
     body = f"""
     <h1>OpenArm データ収集</h1>
-    {entry_card(entry)}
+    {entry_card(config, entry)}
     <div class="card">{others}{CLEANUP_FORM}
     </div>
 """
@@ -1043,7 +1160,19 @@ function preparingHtml(s) {
           <div class="sub">起動が終わると自動でタスク画面に切り替わります。しばらくお待ちください。</div>
         </div>
       </div>
+      ${webxrHtml(s)}
       ${logHtml(s)}
+    </div>`;
+}
+
+function webxrHtml(s) {
+  if (!s.webxr_url) return "";
+  return `
+    <div class="notice">
+      ヘッドセットのブラウザで次の URL を開き、「Start」を押してください
+      （この PC のブラウザではありません）。証明書の警告が出たら
+      「詳細設定」から続行してください。
+      <span class="url">${esc(s.webxr_url)}</span>
     </div>`;
 }
 
@@ -1056,6 +1185,7 @@ function errorHtml(s) {
       <div class="step" style="color:#ff8fa3">${esc(s.step)}</div>
       ${s.hint ? `<div class="error-hint">${esc(s.hint)}</div>` : ""}
       ${items ? `<ul class="error-list">${items}</ul>` : ""}
+      ${webxrHtml(s)}
       <div class="buttons">
         ${startForm(s, "再試行")}
         <a class="button secondary" href="/log" target="_blank">詳しいログを見る</a>

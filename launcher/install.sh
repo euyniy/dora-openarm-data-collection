@@ -21,12 +21,18 @@
 #   1. launcher.yaml の entry ごとにデスクトップショートカットを作成
 #      (shortcut: false の entry はメニューからのみ選ぶ。収録するタスクは
 #       アイコンをダブルクリックしたあとの画面で選ぶ)
-#   2. CAN 設定コマンドをパスワードなし sudo で実行できるようにする
+#   2. WebXR 構成があれば、その TLS 証明書を作る
+#      (WebXR は HTTPS でないと動かない。ヘッドセットが名前を引けるホスト名で
+#       自己署名証明書を作り、ランチャーが画面に出す URL と揃える)
+#   3. CAN 設定コマンドをパスワードなし sudo で実行できるようにする
 #      (アルバイトがターミナルでパスワードを入力しないで済むようにするため)
+#
+# ホスト名は WEBXR_HOSTNAME で上書きできる (既定は <ホスト名>.local)。
 
 set -euo pipefail
 
 LAUNCHER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${LAUNCHER_DIR}/.." && pwd)"
 CONFIG="${LAUNCHER_DIR}/launcher.yaml"
 PYTHON="${PYTHON:-/usr/bin/python3}"
 APPLICATIONS_DIR="${HOME}/.local/share/applications"
@@ -168,6 +174,102 @@ done
 
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "${APPLICATIONS_DIR}" 2>/dev/null || true
+fi
+
+# launcher.yaml の webxr 構成から "証明書<TAB>鍵" を取り出す (重複は除く)。
+webxr_files="$("${PYTHON}" - "${CONFIG}" <<'PY'
+import sys
+import yaml
+
+config = yaml.safe_load(open(sys.argv[1], encoding="utf-8")) or {}
+seen = []
+for entry in config.get("entries") or []:
+    webxr = entry.get("webxr")
+    if not webxr:
+        continue
+    pair = (
+        str(webxr.get("tls_certificate",
+                      "nodes/dora-openarm-webxr/example/server.crt")),
+        str(webxr.get("tls_key", "nodes/dora-openarm-webxr/example/server.key")),
+    )
+    if pair not in seen:
+        seen.append(pair)
+for pair in seen:
+    print("\t".join(pair))
+PY
+)"
+
+if [ -n "${webxr_files}" ]; then
+  echo
+  echo "== WebXR の TLS 証明書を用意します =="
+
+  # ヘッドセットが名前を引けるホスト名。証明書の CN と、ランチャーが画面に
+  # 出す URL のホスト名は同じでなければならない (違うと接続を拒否される)。
+  # ドメイン付きのホスト名なら .local は足さない (ランチャー側と同じ判定)。
+  default_host="$(hostname)"
+  case "${default_host}" in
+    *.*) ;;
+    *) default_host="${default_host}.local" ;;
+  esac
+  WEBXR_HOSTNAME="${WEBXR_HOSTNAME:-${default_host}}"
+  echo "  ホスト名: ${WEBXR_HOSTNAME}"
+
+  # avahi-resolve は引けなくても終了コード 0 なので、出力で判定する
+  # (引けたときだけ "<名前><TAB><アドレス>" を出す)。
+  if command -v avahi-resolve >/dev/null 2>&1; then
+    resolved="$(avahi-resolve --name "${WEBXR_HOSTNAME}" 2>/dev/null | cut -f2)"
+    if [ -n "${resolved}" ]; then
+      echo "  確認: ${WEBXR_HOSTNAME} は ${resolved} に解決されます"
+      echo "        (ヘッドセットと同じネットワークのアドレスか確認してください)"
+    else
+      echo "  注意: ${WEBXR_HOSTNAME} を名前解決できません。ヘッドセットから" >&2
+      echo "        つながらない場合は、WEBXR_HOSTNAME にヘッドセットから届く" >&2
+      echo "        名前 (IP アドレスなど) を指定して実行し直してください。" >&2
+    fi
+  fi
+
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "エラー: openssl がありません。sudo apt install openssl を実行してください。" >&2
+    exit 1
+  fi
+
+  while IFS=$'\t' read -r certificate key; do
+    [ -z "${certificate}" ] && continue
+    cert_path="${REPO_DIR}/${certificate}"
+    key_path="${REPO_DIR}/${key}"
+    cert_dir="$(dirname "${cert_path}")"
+    host_file="${cert_path%.*}.host"
+    prepare="${cert_dir}/prepare_tls.sh"
+
+    if [ ! -x "${prepare}" ]; then
+      echo "エラー: ${prepare} がありません。" >&2
+      echo "  git submodule update --init nodes/dora-openarm-webxr を実行してください。" >&2
+      exit 1
+    fi
+
+    # 作り直しが要るのは、無いとき・別のホスト名のとき・期限が近いとき。
+    if [ -f "${cert_path}" ] && [ -f "${key_path}" ] &&
+       [ "$(cat "${host_file}" 2>/dev/null)" = "${WEBXR_HOSTNAME}" ] &&
+       openssl x509 -checkend 2592000 -noout -in "${cert_path}" >/dev/null 2>&1; then
+      echo "  作成済みです（変更しません）: ${certificate}"
+      continue
+    fi
+
+    echo "  作成: ${certificate}"
+    if ! "${prepare}" "${WEBXR_HOSTNAME}" >/dev/null 2>&1; then
+      echo "エラー: TLS 証明書を作成できませんでした" >&2
+      exit 1
+    fi
+    # prepare_tls.sh は自分のディレクトリに server.crt / server.key を作る。
+    # launcher.yaml が別の名前を指しているときはそこへ置き直す。
+    if [ "${cert_path}" != "${cert_dir}/server.crt" ]; then
+      mv -f "${cert_dir}/server.crt" "${cert_path}"
+      mv -f "${cert_dir}/server.key" "${key_path}"
+    fi
+    # ランチャーはこのファイルを読んで、画面に出す URL のホスト名にする。
+    echo "${WEBXR_HOSTNAME}" > "${host_file}"
+    echo "  ヘッドセットで開く URL: https://${WEBXR_HOSTNAME}:8443/"
+  done <<< "${webxr_files}"
 fi
 
 echo

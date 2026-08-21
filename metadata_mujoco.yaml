@@ -16,8 +16,12 @@ location: Lab
 operator: Tester
 
 tasks:
+  # prompt / description は英語のままデータセットに記録され、画面には
+  # prompt_ja / description_ja が出る（metadata.yaml と同じ扱い）。
   - prompt: Pick a spoon.
+    prompt_ja: スプーンを取る
     description: Pick a spoon on a table.
+    description_ja: テーブルの上のスプーンを取ります。
 
 equipment:
   id: Test
