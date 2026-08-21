@@ -113,7 +113,7 @@ nodes:
     build: pip install -e nodes/dora-openarm
     # build: pip install dora-openarm
     path: dora-openarm
-    args: "--side left --align-trigger gripper --config openarm_cell_higher_pd.yaml "
+    args: "--side left --align-trigger gripper --config openarm_cell_higher_pd.yaml"
     inputs:
       # Event ID is only used. Event value isn't used.
       request_state: leader/follower_position_left

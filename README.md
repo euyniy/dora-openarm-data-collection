@@ -45,6 +45,10 @@ needs no application on the headset: the operator opens a page served by the
 `webxr` node in the headset's own browser. The three record the same task sets, so
 the launcher has one entry each and lists the task sets inside it.
 
+All three drive the same cell, so all six `dora-openarm` follower nodes are
+started with `--config openarm_cell_higher_pd.yaml`: the joint limits and PD gains
+this cell's arms are tuned for.
+
 WebXR only runs over HTTPS, so the `webxr` node needs a certificate for a host
 name the headset can resolve; `launcher/install.sh` generates a self-signed one
 and the launcher shows the matching URL on screen.
