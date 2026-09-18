@@ -40,3 +40,18 @@
 [submodule "nodes/dora-openarm-webxr"]
 	path = nodes/dora-openarm-webxr
 	url = https://github.com/enactic/dora-openarm-webxr.git
+[submodule "lib/openarm_driver"]
+	path = lib/openarm_driver
+	url = https://github.com/enactic/openarm_driver.git
+[submodule "lib/openarm_can"]
+	path = lib/openarm_can
+	url = https://github.com/enactic/openarm_can.git
+[submodule "lib/openarm_ker"]
+	path = lib/openarm_ker
+	url = https://github.com/enactic/openarm_ker.git
+[submodule "lib/openarm_control"]
+	path = lib/openarm_control
+	url = https://github.com/enactic/openarm_control.git
+[submodule "lib/openarm_mujoco"]
+	path = lib/openarm_mujoco
+	url = https://github.com/enactic/openarm_mujoco.git

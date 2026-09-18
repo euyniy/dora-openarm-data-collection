@@ -14,11 +14,9 @@
 
 nodes:
   - id: ui
-    build: pip install -e nodes/dora-openarm-data-collection-ui
-    # build: pip install dora-openarm-data-collection-ui
     path: dora-openarm-data-collection-ui
     env:
-      METADATA_FILE: "metadata.yaml"
+      METADATA_FILE: "metadata_dummy.yaml"
     inputs:
       # We need at least one input to keep this node alive.
       tick: dora/timer/secs/1
@@ -26,8 +24,6 @@ nodes:
       - command
 
   - id: quittable-tick-leader
-    build: pip install -e nodes/dora-openarm-quitter
-    # build: pip install dora-openarm-quitter
     path: dora-openarm-quitter
     inputs:
       command: ui/command
@@ -37,8 +33,6 @@ nodes:
       - tick
 
   - id: quittable-tick-camera
-    build: pip install -e nodes/dora-openarm-quitter
-    # build: pip install dora-openarm-quitter
     path: dora-openarm-quitter
     inputs:
       command: ui/command
@@ -48,8 +42,6 @@ nodes:
       - tick
 
   - id: leader
-    build: pip install -e nodes/dora-openarm-dummy-ker
-    # build: pip install dora-openarm-dummy-ker
     path: dora-openarm-dummy-ker
     inputs:
       tick: quittable-tick-leader/tick
@@ -63,8 +55,6 @@ nodes:
       - joystick_button
 
   - id: follower-right
-    build: pip install -e nodes/dora-openarm-dummy
-    # build: pip install dora-openarm-dummy
     path: dora-openarm-dummy
     inputs:
       # Event ID is only used. Event value isn't used.
@@ -75,8 +65,6 @@ nodes:
       - status
 
   - id: camera-wrist-right
-    build: pip install -e nodes/dora-openarm-dummy-camera
-    # build: pip install dora-openarm-dummy-camera
     path: dora-openarm-dummy-camera
     env:
       ENCODING: "jpeg"
@@ -89,8 +77,6 @@ nodes:
       - image
 
   - id: follower-left
-    build: pip install -e nodes/dora-openarm-dummy
-    # build: pip install dora-openarm-dummy
     path: dora-openarm-dummy
     inputs:
       # Event ID is only used. Event value isn't used.
@@ -101,8 +87,6 @@ nodes:
       - status
 
   - id: camera-wrist-left
-    build: pip install -e nodes/dora-openarm-dummy-camera
-    # build: pip install dora-openarm-dummy-camera
     path: dora-openarm-dummy-camera
     env:
       ENCODING: "jpeg"
@@ -115,8 +99,6 @@ nodes:
       - image
 
   - id: camera-head
-    build: pip install -e nodes/dora-openarm-dummy-camera
-    # build: pip install dora-openarm-dummy-camera
     path: dora-openarm-dummy-camera
     inputs:
       tick: quittable-tick-camera/tick
@@ -129,8 +111,6 @@ nodes:
       - image
 
   - id: camera-ceiling
-    build: pip install -e nodes/dora-openarm-dummy-camera
-    # build: pip install dora-openarm-dummy-camera
     path: dora-openarm-dummy-camera
     env:
       ENCODING: "jpeg"
@@ -143,11 +123,9 @@ nodes:
       - image
 
   - id: recorder
-    build: pip install -e nodes/dora-openarm-dataset-recorder
-    # build: pip install dora-openarm-dataset-recorder
     path: dora-openarm-dataset-recorder
     env:
-      METADATA_FILE: "metadata.yaml"
+      METADATA_FILE: "metadata_dummy.yaml"
     inputs:
       command: ui/command
       arm_right_action: leader/follower_position_right

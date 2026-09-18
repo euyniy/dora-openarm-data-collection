@@ -17,9 +17,18 @@ nodes:
     path: dora-openarm-data-collection-ui
     env:
       METADATA_FILE: "metadata.yaml"
+      LAUNCHER_URL: "http://127.0.0.1:8080/"
     inputs:
-      # We need at least one input to keep this node alive.
       tick: dora/timer/secs/1
+      button_a:
+        source: quittable-webxr/button_a
+        queue_size: 100
+      button_b:
+        source: quittable-webxr/button_b
+        queue_size: 100
+      vr_receive_times:
+        source: quittable-webxr/vr_receive_times
+        queue_size: 100
       camera_wrist_right:
         source: camera-wrist-right/image
         queue_size: 1
@@ -43,52 +52,101 @@ nodes:
       - command
       - arm_command
 
-  - id: quittable-tick-leader
-    path: dora-openarm-quitter
-    inputs:
-      command: ui/command
-      # 250Hz
-      tick: dora/timer/millis/4
-    outputs:
-      - tick
-
   - id: quittable-tick-camera
     path: dora-openarm-quitter
     inputs:
       command: ui/command
-      # tick: dora/timer/millis/200 # 5Hz
       tick: dora/timer/millis/33 # 30fps
     outputs:
       - tick
 
-  - id: leader
-    path: dora-openarm-ker
+  - id: webxr
+    path: dora-openarm-webxr
+    env:
+      TLS_CERTIFICATE_FILE: "nodes/dora-openarm-webxr/example/server.crt"
+      TLS_KEY_FILE: "nodes/dora-openarm-webxr/example/server.key"
+      VIEW_CONFIGURATION_FILE: "view-webxr.yaml"
     inputs:
-      tick: quittable-tick-leader/tick
+      tick: dora/timer/millis/4
+      camera_head_right:
+        source: camera-head-stereo-splitter/image_1
+        queue_size: 1
+      camera_head_left:
+        source: camera-head-stereo-splitter/image_0
+        queue_size: 1
     outputs:
-      - follower_position_left
-      - follower_position_right
-      - metadata
+      - pose_right
+      - trigger_right
+      - pose_left
+      - trigger_left
+      - grip_right
+      - grip_left
+      - joystick_x_right
+      - joystick_y_right
+      - joystick_x_left
+      - joystick_y_left
+      - button_a
+      - button_b
+      - button_x
+      - button_y
+      - status
+      - vr_receive_times
+      - pose_reference
 
-  - id: lifter
-    path: dora-openarm-cell-lifter
+  - id: quittable-webxr
+    path: dora-openarm-quitter
     inputs:
-      # Tick-only: use the built-in calibration and hold behavior.
-      tick: quittable-tick-leader/tick
+      command: ui/command
+      pose_right: webxr/pose_right
+      trigger_right: webxr/trigger_right
+      pose_left: webxr/pose_left
+      trigger_left: webxr/trigger_left
+      grip_right: webxr/grip_right
+      grip_left: webxr/grip_left
+      joystick_x_right: webxr/joystick_x_right
+      joystick_y_right: webxr/joystick_y_right
+      joystick_x_left: webxr/joystick_x_left
+      joystick_y_left: webxr/joystick_y_left
+      button_a: webxr/button_a
+      button_b: webxr/button_b
+      button_x: webxr/button_x
+      button_y: webxr/button_y
+      status: webxr/status
+      vr_receive_times: webxr/vr_receive_times
+      pose_reference: webxr/pose_reference
     outputs:
-      - elevation_observation
-      - elevation_action
+      - pose_right
+      - trigger_right
+      - pose_left
+      - trigger_left
+      - grip_right
+      - grip_left
+      - joystick_x_right
+      - joystick_y_right
+      - joystick_x_left
+      - joystick_y_left
+      - button_a
+      - button_b
+      - button_x
+      - button_y
+      - status
+      - vr_receive_times
+      - pose_reference
 
-  - id: follower-right
-    path: dora-openarm
-    args: "--side right --align-trigger gripper --config openarm_cell_higher_pd_zero_offset"
+  - id: ik
+    path: dora-openarm-ik
+    args: >-
+      --mode bimanual --tick-hz 250
+      --max-iters 5 --damping 0.1
+      --posture-cost 0 --lm-damping 0.01 --limit-velocity
     inputs:
-      # Event ID is only used. Event value isn't used.
-      request_state: leader/follower_position_right
-      move_position: leader/follower_position_right
-      command: ui/arm_command
+      target_right: quittable-webxr/pose_right
+      target_left: quittable-webxr/pose_left
+      trigger_right: quittable-webxr/trigger_right
+      trigger_left: quittable-webxr/trigger_left
     outputs:
-      - state
+      - position_left
+      - position_right
       - status
 
   - id: camera-wrist-right
@@ -105,17 +163,49 @@ nodes:
     outputs:
       - image
 
-  - id: follower-left
+  # ── MuJoCo viewer  ──
+  - id: mujoco-viewer
+    path: dora-openarm-mujoco
+    args: "--keyframe home --viewer --debug-frames"
+    inputs:
+      move_position_left: ik/position_left
+      move_position_right: ik/position_right
+      pose_right: quittable-webxr/pose_right
+      pose_left: quittable-webxr/pose_left
+      joystick_y: quittable-webxr/joystick_y_left
+    outputs:
+      - status
+
+  - id: follower-right
     path: dora-openarm
-    args: "--side left --align-trigger gripper --config openarm_cell_higher_pd_zero_offset"
+    args: "--side right --align-trigger gripper --config openarm_cell_higher_pd_zero_offset"
     inputs:
       # Event ID is only used. Event value isn't used.
-      request_state: leader/follower_position_left
-      move_position: leader/follower_position_left
+      request_state: ik/position_right
+      move_position: ik/position_right
       command: ui/arm_command
     outputs:
       - state
       - status
+
+  - id: follower-left
+    path: dora-openarm
+    args: "--side left --align-trigger gripper --config openarm_cell_higher_pd_zero_offset"
+    inputs:
+      request_state: ik/position_left
+      move_position: ik/position_left
+      command: ui/arm_command
+    outputs:
+      - state
+      - status
+
+  - id: lifter
+    path: dora-openarm-cell-lifter
+    inputs:
+      joystick_y: quittable-webxr/joystick_y_left
+    outputs:
+      - elevation_observation
+      - elevation_action
 
   - id: camera-wrist-left
     path: opencv-video-capture
@@ -177,19 +267,17 @@ nodes:
     path: dora-openarm-dataset-recorder
     env:
       METADATA_FILE: "metadata.yaml"
-      # Output directory for recorded datasets.
-      DIRECTORY: "ker_data"
+      DIRECTORY: "webxr_data"
     inputs:
       command: ui/command
-      arm_right_action: leader/follower_position_right
+      arm_right_action: ik/position_right
       arm_right_observation: follower-right/state
-      camera_wrist_right: camera-wrist-right/image
-      arm_left_action: leader/follower_position_left
+      arm_left_action: ik/position_left
       arm_left_observation: follower-left/state
+      camera_wrist_right: camera-wrist-right/image
       camera_wrist_left: camera-wrist-left/image
       camera_head_left: camera-head-stereo-splitter/image_0
       camera_head_right: camera-head-stereo-splitter/image_1
       camera_ceiling: camera-ceiling/image
-      ker_metadata: leader/metadata
       elevation_action: lifter/elevation_action
       elevation_observation: lifter/elevation_observation

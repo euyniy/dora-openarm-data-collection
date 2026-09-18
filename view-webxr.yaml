@@ -1,0 +1,95 @@
+# Copyright 2026 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# View and controller-pose settings read by the webxr node through
+# VIEW_CONFIGURATION_FILE in dataflow-webxr.yaml / dataflow-webxr-mujoco.yaml.
+# Read once at node startup; restart the dataflow after changing this file.
+# Reference: https://github.com/reazon-research/dora-openarm-data-collection-ops/blob/main/view-webxr.yaml
+
+# Camera display selection, separate from panel.lock and pose.mode:
+#   mono   : both eyes see one image from camera_head_right; no stereo
+#            calibration is needed.
+#   stereo : one image per eye; also needs camera_head_left and the camera /
+#            stereo calibration settings shown at the end of this file.
+#   none   : no camera panel or negotiated video tracks; pose input still works.
+view: mono
+
+session:
+  # immersive-ar requests a real-world/passthrough background when supported.
+  # immersive-vr uses an immersive virtual view without the surrounding room.
+  mode: immersive-ar
+
+# This block is unused when view is none.
+panel:
+  # room: place the mono panel in front of the headset at session start and
+  #       leave it there; turning the head looks away from it.
+  # head: keep the panel in front of the operator as their head moves.
+  # This affects the displayed panel, not the controller pose reference.
+  lock: room
+
+  # Panel distance in meters. In stereo mode, angular size comes from the
+  # camera FOV below; distance sets the virtual panel depth.
+  distance: 1.3
+
+  # Mono panel width in meters; height follows the image aspect ratio.
+  # Stereo uses camera.horizontal_fov / vertical_fov instead of this width.
+  width: 1.5
+
+pose:
+  # neck (default): subtract the estimated neck pivot, retaining WebXR local
+  # axes and controller orientation before the robot-frame conversion.
+  # relative: express controller position AND orientation in the current
+  # headset frame. The reference updates each frame; it is not a clutch anchor.
+  # Both modes still apply the robot-frame mapping and frame_offset below.
+  mode: relative
+
+  # Neutral hand-position offset from the robot's arm_origin site, in meters.
+  # Leave commented to use the node default [-0.085, 0.0, -0.14]. Tune this
+  # against the actual robot workspace rather than copying a scene offset.
+  # The node's MuJoCo view examples use [-0.1, 0.0, 0.23] for their demo setup.
+  # frame_offset: [-0.085, 0.0, -0.14]
+
+  # Neck mode only: ignored by the current relative mode.
+  # Offset from the eyes to the neck rotation pivot in headset coordinates,
+  # in meters (+Y up, -Z forward). This compensates for the arc followed by
+  # a worn headset during head turns. [0, 0, 0] uses the headset position itself.
+  # Built-in default: [0.0, -0.075, 0.080].
+  #
+  # In neck mode, a measured --neck-pivot-file (default: neck_pivot.yaml)
+  # overrides this value at startup, even without --calibration enabled.
+  # --calibration measures the pivot while holding Y and turning the head;
+  # it requires pose.mode=neck and is rejected in relative mode.
+  neck_pivot_offset: [0.0, -0.075, 0.080]
+
+# Optional stereo view:
+# Set view to stereo and panel.lock to head, connect both head-camera inputs,
+# then uncomment the blocks below and replace the example values with the
+# camera's calibration. Values refer to ONE eye image, e.g. 1280x720 after
+# splitting a 2560x720 side-by-side frame, not to the combined stereo image.
+# For supported ZED cameras, the node provides:
+#   nodes/dora-openarm-webxr/example/zed_view_parameters.py
+# The numbers below are references from the example, not this camera's measured
+# calibration, and should not be enabled unchanged without checking them.
+#
+# camera:
+#   # Per-eye image field of view in degrees; controls the displayed angular size.
+#   horizontal_fov: 79.4
+#   vertical_fov: 50.1
+#
+# stereo:
+#   # Right-eye image alignment offsets, in original per-eye image pixels.
+#   vertical_align: 10.0
+#   # Horizontal offset: more negative brings perceived depth closer;
+#   # more positive moves it farther away.
+#   convergence: -1.7

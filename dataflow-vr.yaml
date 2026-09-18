@@ -14,7 +14,6 @@
 
 nodes:
   - id: ui
-    build: pip install -e nodes/dora-openarm-data-collection-ui
     path: dora-openarm-data-collection-ui
     env:
       METADATA_FILE: "metadata.yaml"
@@ -53,7 +52,6 @@ nodes:
       - arm_command
 
   - id: quittable-tick-camera
-    build: pip install -e nodes/dora-openarm-quitter
     path: dora-openarm-quitter
     inputs:
       command: ui/command
@@ -63,16 +61,14 @@ nodes:
       - tick
 
   - id: quittable-tick-leader
-    build: pip install -e nodes/dora-openarm-quitter
     path: dora-openarm-quitter
     inputs:
       command: ui/command
-      tick: dora/timer/millis/2
+      tick: dora/timer/millis/4
     outputs:
       - tick
 
   - id: udp-receiver
-    build: pip install -e nodes/dora-openarm-vr
     path: dora-openarm-quest-receiver
     args: "--host 0.0.0.0 --port 5006"
     inputs:
@@ -90,9 +86,11 @@ nodes:
       - vr_receive_times
 
   - id: ik
-    build: pip install -e nodes/dora-openarm-kinematics
     path: dora-openarm-ik
-    args: "--mode bimanual --max-iters 10 --dt 0.1 --damping 0.1 --posture-cost 0.01 --lm-damping 0.01"
+    args: >-
+      --mode bimanual --tick-hz 250
+      --max-iters 5 --damping 0.1
+      --posture-cost 0 --lm-damping 0.01 --limit-velocity
     inputs:
       target_right: udp-receiver/pose_right
       target_left: udp-receiver/pose_left
@@ -104,7 +102,6 @@ nodes:
       - status
 
   - id: camera-wrist-right
-    build: pip install opencv-video-capture
     path: opencv-video-capture
     env:
       # Please configure!
@@ -120,12 +117,11 @@ nodes:
 
   # ── MuJoCo viewer  ──
   - id: mujoco-viewer
-    build: pip install -e nodes/dora-openarm-mujoco
     path: dora-openarm-mujoco
     args: "--keyframe home --viewer --debug-frames"
     inputs:
-      position_left: ik/position_left
-      position_right: ik/position_right
+      move_position_left: ik/position_left
+      move_position_right: ik/position_right
       pose_right: udp-receiver/pose_right
       pose_left: udp-receiver/pose_left
       joystick_y: udp-receiver/joystick_y_left
@@ -133,9 +129,8 @@ nodes:
       - status
 
   - id: follower-right
-    build: pip install -e nodes/dora-openarm
     path: dora-openarm
-    args: "--side right --align-trigger gripper"
+    args: "--side right --align-trigger gripper --config openarm_cell_higher_pd_zero_offset"
     inputs:
       # Event ID is only used. Event value isn't used.
       request_state: ik/position_right
@@ -146,9 +141,8 @@ nodes:
       - status
 
   - id: follower-left
-    build: pip install -e nodes/dora-openarm
     path: dora-openarm
-    args: "--side left --align-trigger gripper"
+    args: "--side left --align-trigger gripper --config openarm_cell_higher_pd_zero_offset"
     inputs:
       request_state: ik/position_left
       move_position: ik/position_left
@@ -158,7 +152,6 @@ nodes:
       - status
 
   - id: lifter
-    build: pip install -e nodes/dora-openarm-cell-lifter
     path: dora-openarm-cell-lifter
     inputs:
       joystick_y: udp-receiver/joystick_y_left
@@ -167,7 +160,6 @@ nodes:
       - elevation_action
 
   - id: camera-wrist-left
-    build: pip install opencv-video-capture
     path: opencv-video-capture
     env:
       # Please configure!
@@ -182,7 +174,6 @@ nodes:
       - image
 
   - id: camera-head-stereo
-    build: pip install opencv-video-capture
     path: opencv-video-capture
     env:
       # Please configure!
@@ -197,7 +188,6 @@ nodes:
       - image
 
   - id: camera-head-stereo-splitter
-    build: pip install -e nodes/dora-opencv-image-splitter
     path: dora-opencv-image-splitter
     env:
       SPLIT_MODE: "vertical"
@@ -212,7 +202,6 @@ nodes:
       - image_1
 
   - id: camera-ceiling
-    build: pip install opencv-video-capture
     path: opencv-video-capture
     env:
       # Please configure!
@@ -227,7 +216,6 @@ nodes:
       - image
 
   - id: recorder
-    build: pip install -e nodes/dora-openarm-dataset-recorder
     path: dora-openarm-dataset-recorder
     env:
       METADATA_FILE: "metadata.yaml"

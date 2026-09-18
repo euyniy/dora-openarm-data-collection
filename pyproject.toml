@@ -1,0 +1,56 @@
+# Copyright 2026 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+[project]
+name = "dora-openarm-data-collection"
+version = "0.1.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "dora-rs-cli==1.0.1",
+    "dora-openarm",
+    "dora-openarm-cell-lifter",
+    "dora-openarm-data-collection-ui",
+    "dora-openarm-dataset-recorder",
+    "dora-openarm-dummy",
+    "dora-openarm-dummy-camera",
+    "dora-openarm-dummy-ker",
+    "dora-openarm-ker",
+    "dora-openarm-kinematics",
+    "dora-openarm-mujoco",
+    "dora-openarm-quitter",
+    "dora-openarm-vr",
+    "dora-openarm-webxr",
+    "dora-opencv-image-splitter",
+    "opencv-video-capture",
+    "openarm-driver>=0.5.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+dora-openarm = { path = "nodes/dora-openarm", editable = true }
+dora-openarm-cell-lifter = { path = "nodes/dora-openarm-cell-lifter", editable = true }
+dora-openarm-data-collection-ui = { path = "nodes/dora-openarm-data-collection-ui", editable = true }
+dora-openarm-dataset-recorder = { path = "nodes/dora-openarm-dataset-recorder", editable = true }
+dora-openarm-dummy = { path = "nodes/dora-openarm-dummy", editable = true }
+dora-openarm-dummy-camera = { path = "nodes/dora-openarm-dummy-camera", editable = true }
+dora-openarm-dummy-ker = { path = "nodes/dora-openarm-dummy-ker", editable = true }
+dora-openarm-ker = { path = "nodes/dora-openarm-ker", editable = true }
+dora-openarm-kinematics = { path = "nodes/dora-openarm-kinematics", editable = true }
+dora-openarm-mujoco = { path = "nodes/dora-openarm-mujoco", editable = true }
+dora-openarm-quitter = { path = "nodes/dora-openarm-quitter", editable = true }
+dora-openarm-vr = { path = "nodes/dora-openarm-vr", editable = true }
+dora-openarm-webxr = { path = "nodes/dora-openarm-webxr", editable = true }
+dora-opencv-image-splitter = { path = "nodes/dora-opencv-image-splitter", editable = true }

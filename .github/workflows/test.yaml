@@ -30,20 +30,25 @@ jobs:
           submodules: recursive
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.x'
-      - name: Install dora-rs-cli
+          python-version-file: pyproject.toml
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: '0.12.15'
+          enable-cache: true
+      - name: Install system dependencies
         run: |
-          pip install dora-rs-cli
+          sudo apt-get update
+          sudo apt-get install -y libcli11-dev
+      - name: Install
+        run: |
+          uv sync --locked
       - name: Up
+        id: up
         run: |
-          dora up
-      - name: Build
-        run: |
-          dora build dataflow_dummy.yaml
+          uv run --no-sync dora up
       - name: Run
         run: |
-          # dora start doesn't run build commands unlike dora run.
-          dora start dataflow_dummy.yaml --attach &
+          uv run --no-sync dora start dataflow_dummy.yaml --attach &
           # Wait for the UI node's HTTP server
           for i in $(seq 1 30); do
             if curl --silent --output /dev/null http://127.0.0.1:8000/; then
@@ -58,8 +63,9 @@ jobs:
           curl -X POST http://127.0.0.1:8000/quit
           wait
       - name: Down
+        if: ${{ always() && steps.up.outcome == 'success' }}
         run: |
-          dora down --force
+          uv run --no-sync dora down --force
       - uses: actions/upload-artifact@v7
         with:
           name: dataset
