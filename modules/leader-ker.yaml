@@ -40,6 +40,9 @@ module:
 nodes:
   - id: ker
     path: ../dora-openarm-ker
+    # Per-joint 1 Euro filter tuned for low lag (~8 ms at 2 rad/s).
+    # Raise --min-cutoff/--beta for less lag, lower them for less jitter.
+    args: "--one-euro --min-cutoff 5.0 --beta 5.0 --d-cutoff 5.0"
     inputs:
       tick: _mod/tick
     outputs:

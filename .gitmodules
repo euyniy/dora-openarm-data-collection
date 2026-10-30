@@ -21,7 +21,8 @@
 	url = https://github.com/enactic/dora-openarm.git
 [submodule "nodes/dora-openarm-ker"]
 	path = nodes/dora-openarm-ker
-	url = https://github.com/enactic/dora-openarm-ker.git
+	url = https://github.com/euyniy/dora-openarm-ker.git
+	branch = feat/one-euro-filter
 [submodule "nodes/dora-openarm-cell-lifter"]
 	path = nodes/dora-openarm-cell-lifter
 	url = https://github.com/enactic/dora-openarm-cell-lifter.git
