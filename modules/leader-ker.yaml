@@ -40,6 +40,9 @@ module:
 nodes:
   - id: ker
     path: ../dora-openarm-ker
+    # Smooths arm joint jitter with a 1 Euro filter tuned for low lag. Tune
+    # with --min-cutoff/--beta/--d-cutoff; see the dora-openarm-ker README.
+    args: "--one-euro"
     inputs:
       tick: _mod/tick
     outputs:

@@ -82,7 +82,9 @@ under `data/$LEADER-$ROBOT/`, e.g. `data/webxr-mujoco/`:
 ### KER leader
 
 `LEADER=ker` uses a [KER](https://github.com/enactic/dora-openarm-ker) leader arm
-connected over USB. Its joint positions are sent to the follower arms directly.
+connected over USB. Its joint positions are sent to the follower arms directly,
+with arm joint jitter smoothed by a 1 Euro filter (`--one-euro` in
+[`modules/leader-ker.yaml`](modules/leader-ker.yaml)).
 
 ### VR leader
 
